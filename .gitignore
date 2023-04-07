@@ -1,0 +1,5 @@
+memo
+node_modules/
+app.yaml
+.gcloudignore
+config.js
