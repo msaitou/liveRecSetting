@@ -1,9 +1,5 @@
-const ID1 = "#t1"; // データ抽出タブ
-const ID3 = "#t3"; // 整形＆出力タブ
-const ID4 = "#t4"; // シーズン
-const ID5 = "#t5"; // 役
-const ID6 = "#t6"; // 選手
-const ID2 = "#t2"; // アカウントタブ
+const ID1 = "#addedit"; // シーズン
+const ID2 = "#bookedlist"; // アカウントタブ
 
 // toastクラスがついている要素にBootStrapのトーストを適用する
 var toastElList = [].slice.call(document.querySelectorAll(".toast"));
@@ -43,204 +39,220 @@ const reqApi = (params, query = "") => {
       console.log("err");
     });
 };
-// // アカウントタブ ID2------------------------------
-// document.querySelector(`${ID2} button.save`).addEventListener("click", async () => {
-//   let saveObjs = {};
-//   let messageList = [];
-//   id2FieldsList.forEach((f) => {
-//     saveObjs[f] = document.querySelector(`${ID2} [name='${f}']`);
-//     if (!saveObjs[f].value) {
-//       saveObjs[f].focus();
-//       switch (f) {
-//         case id2FieldsList[0]:
-//           messageList.push("アカウントを入力してください");
-//           break;
-//         case id2FieldsList[1]:
-//           messageList.push("パスワードを入力してください");
-//           break;
-//       }
-//     }
-//   });
-//   if (messageList.length) {
-//     showErrToast(messageList);
-//     return;
-//   }
-//   let data = { id: saveObjs.id.value, password: saveObjs.password.value };
-//   let where = `rowid = ${document.querySelector(`${ID2} input[name='rowid']`).value}`;
-//   // console.log(data, where);
-//   // let res = await window.eAPI.accessDb("ACCOUNT", "update", null, { recs: data, cond: where });
-//   // // console.log(res);
-//   // if (res && res.err) showErrToast([res.err]);
-//   // else showOkToast(["アカウント情報の更新に成功しました。"]);
-// });
-// // アカウントタブ ID2------------------------------
+function flatpickrInit(name, d) {
+  flatpickr(`[name='${name}']`, {
+    locale: "ja",
+    dateFormat: "m/d(D)",
+    defaultDate: d,
+  });
+}
+var bookedList = [];
 // データ抽出タブ ID1------------------------------
-let id1FieldsList = ["year", "kind", "targets", "reconvert_raw", "reconvert_sche"];
-document.querySelector(`${ID4} button.save`).addEventListener("click", async () => {
+let nameList = [
+  "chanel",
+  "title",
+  "start_date",
+  "start_time",
+  "end_date",
+  "end_time",
+  "day0",
+  "day1",
+  "day2",
+  "day3",
+  "day4",
+  "day5",
+  "day6",
+];
+document.querySelector(`${ID1} button.save`).addEventListener("click", async () => {
+  let saveObjs = {};
+  let messageList = [];
+  for (let f of nameList) {
+    if (f == "chanel") continue;
+    saveObjs[f] = document.querySelector(`${ID1} input[name='${f}']`);
+    if (!saveObjs[f].value) {
+      if (messageList.length === 0) saveObjs[f].focus();
+      switch (f) {
+        case nameList[1]:
+          messageList.push("タイトルを入力してください");
+          break;
+        case nameList[3]:
+          messageList.push("開始時刻を入力してください");
+          break;
+        case nameList[5]:
+          messageList.push("終了時刻を入力してください");
+          break;
+      }
+    }
+  }
+  if (messageList.length) {
+    showErrToast(messageList);
+    return;
+  }
+  saveObjs["chanel"] = document.querySelector(`${ID1} select[name='chanel']`);
+  let doc = {};
+  for (let name of nameList) {
+    if (name.indexOf("day") > -1) doc[name] = saveObjs[name].checked;
+    else if (name.indexOf("_date") > -1) doc[name] = saveObjs[name]._flatpickr.selectedDates[0];
+    else doc[name] = saveObjs[name].value;
+  }
+
+  doc["start_date"] = new Date(
+    doc["start_date"].setHours(doc["start_time"].substr(0, 2), doc["start_time"].substr(3, 2), 0, 0)
+  );
+  doc["end_date"] = new Date(
+    doc["end_date"].setHours(doc["end_time"].substr(0, 2), doc["end_time"].substr(3, 2), 0, 0)
+  );
+  if (doc.start_date > doc.end_date) messageList.push("開始と終了日が逆です");
+  let oid = document.querySelector(`${ID1} input[name='_id']`).value;
+  bookedList.forEach((b) => {
+    if (b._id == oid) return;
+    if (doc.start_date <= new Date(b.start_date) && doc.end_date >= new Date(b.start_date))
+      messageList.push("登録済みの録画日時と重複します");
+    if (new Date(b.start_date) <= doc.start_date && new Date(b.end_date) >= doc.start_date)
+      messageList.push("登録済みの録画日時と重複します2");
+  });
+  if (messageList.length) {
+    showErrToast(messageList);
+    return;
+  }
+
+  let cond = {};
+  if (oid) cond = { _id: oid };
   let saveData = {
     host: DB_INFO.HOST,
     dbName: DB_INFO.DB_NAME,
-    coll: "auth_user",
-    method: "find",
-    opt: {},
+    coll: "booked",
+    method: "update",
+    opt: { doc },
+    cond,
   };
+  console.log(doc);
+  // return;
   await reqApi({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(saveData),
   }).then((res) => {
     console.log("aaa", res);
+    getBookedList();
+    newEntry();
   });
 });
-// データ抽出タブ ID1------------------------------
-// 整形＆出力タブ ID3------------------------------
-let id3FieldsList = ["game_no", "status"];
-let getId3data = async () => {
-  let year = document.querySelector(`${ID3} input[name="year"]`);
-  if (!year.value) {
-    year.focus();
-    let messageList = [];
-    messageList.push("年度を入力してください");
-    showErrToast(messageList);
-    return;
+let getBookedList = async () => {
+  let findData = {
+    host: DB_INFO.HOST,
+    dbName: DB_INFO.DB_NAME,
+    coll: "booked",
+    method: "find",
+    cond: { status: { $ne: "済" } },
+  };
+  let data = await reqApi({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(findData),
+  });
+  let html = "";
+  console.log(data);
+  data = data.rec;
+  bookedList = data;
+  // オブジェクトの昇順ソート
+  data.sort((a, b) => (a.start_date > b.start_date ? 1 : -1));
+  data.forEach((d) => {
+    html += `<tr>`;
+    html += `<td>${d.title}</td>`;
+    html += `<td>${new Date(d.start_date).toLocaleString()}~${new Date(d.end_date).toLocaleTimeString()}</td>`;
+    html += `<td>${d.chanel}</td>`;
+    html += `<td><i class="btn btn-sm btn-dark me-1 py-0 fas fa-edit" oid="${d._id}"></i>
+    <i class="btn btn-sm btn-dark me-1 py-0 fas fa-trash-can" oid="${d._id}"></i></td></tr>`;
+  });
+  // // console.log(html);
+  document.querySelector(`${ID2} tbody`).innerHTML = html;
+  document.querySelectorAll(`${ID2} i.fa-edit`).forEach((e, i) => {
+    e.addEventListener("click", () => {
+      let d = data.filter((d) => d._id == e.getAttribute("oid"))[0];
+      document.querySelector(`${ID1} input[name='_id']`).value = d._id;
+      nameList.some((name) => {
+        if (name.indexOf("day") > -1) document.querySelector(`${ID1} [name='${name}']`).checked = d[name];
+        else if (name.indexOf("_date") > -1) flatpickrInit(name, new Date(d[name]));
+        else document.querySelector(`${ID1} [name='${name}']`).value = d[name];
+      });
+      document.querySelector(`${ID1} .mode`).textContent = "編集";
+      document.querySelector(`${ID1} .mode`).classList.add("text-warning");
+    });
+  });
+  document.querySelectorAll(`${ID2} i.fa-trash-can`).forEach((e, i) => {
+    e.addEventListener("click", async () => {
+      // console.log("trash");
+      let oid = e.getAttribute("oid");
+      if (oid) {
+        let delData = {
+          host: DB_INFO.HOST,
+          dbName: DB_INFO.DB_NAME,
+          coll: "booked",
+          method: "delete",
+          cond: { _id: oid },
+        };
+        let res = await reqApi({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(delData),
+        });
+        // console.log(res);
+        if (res && res.err) showErrToast([res.err]);
+        else showOkToast(["1つの予約の削除に成功しました。"]);
+        getBookedList(); // 再表示
+      }
+    });
+  });
+};
+
+function newEntry() {
+  document.querySelector(`${ID1} [name="_id"]`).value = "";
+  document.querySelector(`${ID1} [name="chanel"]`).value = "mahjong";
+  document.querySelector(`${ID1} [name="title"]`).value = "";
+  document.querySelector(`${ID1} [name="start_time"]`).value = "";
+  document.querySelector(`${ID1} [name="end_time"]`).value = "";
+  ["start_date", "end_date"].forEach((n) => {
+    let date = new Date();
+    flatpickrInit(n, date); // TODO 日付を渡す（既存データ表示時）
+  });
+  for (let i = 0; i < 7; i++) {
+    document.querySelector(`${ID1} [name="day${i}"]`).checked = false;
   }
-  // let res = await window.eAPI.extractedData(year.value);
-  // if (res && res.err) {
-  //   showErrToast([res.err]);
-  //   return;
-  // }
-  // //オブジェクトの昇順ソート
-  // res.sort((a, b) => (a.game_no < b.game_no ? -1 : 1));
-  // let html = "";
-  // // console.log(data);
-  // res.forEach((d) => {
-  //   html += `<tr>`;
-  //   html += `<td><input type="checkbox" class="form-checkbox" name="check" game_id="${d.game_id}"/></td>`;
-  //   html += id3FieldsList.reduce((l, f) => l + `<td ${f}>${d[f]}</td>`, ``);
-  //   html += `</tr>`;
-  // });
-  // // console.log(html);
-  // document.querySelector(`${ID3} span.recnum`).textContent = res.length;
-  // document.querySelector(`${ID3} span.convertnum`).textContent = res.filter((d) => d.status == "済").length;
-  // document.querySelector(`${ID3} div[summary]`).classList.remove("d-none"); // 表示する
-  // document.querySelector(`${ID3} tbody`).innerHTML = html;
-  // document.querySelectorAll(`${ID3} table td`).forEach((el) => {
-  //   el.addEventListener("click", (e) => {
-  //     let checkEl = e.target.parentElement.querySelector("[name='check']");
-  //     checkEl.checked = !checkEl.checked;
-  //   });
-  // }); // 行クリックでチェックonoff
-  // document.querySelectorAll(`${ID3} [name='check']`).forEach((el) => {
-  //   el.addEventListener("click", (e) => {
-  //     e.stopPropagation(); // tdのイベントで変更が無くなるのでバブリングをキャンセル
-  //   });
-  // });
-};
-// document.querySelector(`${ID3} button.redisp`).addEventListener("click", getId3data);
-// document.querySelector(`${ID3} #checkall`).addEventListener("change", (e) => {
-//   // console.log(e.target.checked);
-//   document.querySelectorAll(`${ID3} [name="check"]`).forEach((el) => {
-//     el.checked = e.target.checked;
-//   });
-// });
-// document.querySelector(`${ID3} button.output`).addEventListener("click", async () => {
-//   let data = {
-//     year: document.querySelector(`${ID3} [name="year"]`).value,
-//     reconvert: document.querySelector(`${ID3} #reconvert`).checked,
-//     targetList: {},
-//   };
-//   document.querySelectorAll(`${ID3} [name='check']`).forEach((el, i) => {
-//     if (el.checked) {
-//       // if (!data.reconvert && el.closest("tr").querySelector("[status]").textContent == "済") return;
-//       let gameNo = el.closest("tr").querySelector("[game_no]").textContent;
-//       let dateId = gameNo.substring(0, gameNo.length - 2);
-//       if (!(dateId in data.targetList)) data.targetList[dateId] = [];
-//       data.targetList[dateId].push(el.getAttribute("game_id"));
-//     }
-//   });
-//   // toggleDisabled(true);
-//   // // console.log(data);
-//   // let res = await window.eAPI.convert(data);
-//   // toggleDisabled(false);
-//   // // console.log(res);
-
-//   // if (res && res.err) {
-//   //   showErrToast([res.err]);
-//   //   return;
-//   // } else showOkToast(["データの抽出が完了しました。"]);
-//   // for (let [tbl, lines] of Object.entries(res)) {
-//   //   if (["STATS", "RESULTS"].indexOf(tbl) === -1) continue;
-//   //   //IEとその他で処理の切り分け
-//   //   if (navigator.appVersion.toString().indexOf(".NET") > 0) {
-//   //     //IE 10+
-//   //     window.navigator.msSaveBlob(res, fileName + ".pdf");
-//   //   } else {
-//   //     //aタグの生成
-//   //     var a = document.createElement("a");
-//   //     //レスポンスからBlobオブジェクト＆URLの生成
-//   //     var blobUrl = window.URL.createObjectURL(new Blob([lines], { type: "text/csv" }));
-//   //     //上で生成したaタグをアペンド
-//   //     document.body.appendChild(a);
-//   //     a.style = "display: none";
-//   //     //BlobオブジェクトURLをセット
-//   //     a.href = blobUrl;
-//   //     //ダウンロードさせるファイル名の生成
-//   //     a.download = tbl + ".csv";
-//   //     //クリックイベント発火
-//   //     a.click();
-//   //   }
-//   // }
-
-//   // getId3data(); // 再表示
-//   // document.querySelector(`${ID3} #checkall`).checked = false; // 元に戻す
-// });
-// 整形＆出力タブ ID3------------------------------
-// シーズンタブ ID4------------------------------
-let id4FieldsList = ["year", "url_key", "kind", "start_date"];
-let getId4data = async () => {
-  // let data = await window.eAPI.accessDb("SEASON", "select", null, {
-  //   cond: null,
-  //   fields: `OID,${id4FieldsList.join(",")}`,
-  // });
-  // let html = "";
-  // // console.log(data);
-  //   //オブジェクトの降順ソート
-  //   data.sort((a, b) => (a.url_key > b.url_key ? -1 : 1));
-  // data.forEach((d) => {
-  //   html += `<tr>`;
-  //   // `<td>${d.year}</td><td>${d.url_key}</td><td>${d.kind}</td><td>${d.start_date}</td>`;
-  //   html += id4FieldsList.reduce((l, f) => l + `<td>${d[f]}</td>`, ``);
-  //   html += `<td><i class="btn btn-sm btn-dark me-1 py-0 fas fa-edit" rowid="${d.rowid}"></i>
-  //   <i class="btn btn-sm btn-dark me-1 py-0 fas fa-trash-can" rowid="${d.rowid}"></i></td></tr>`;
-  // });
-  // // console.log(html);
-  // document.querySelector(`${ID4} tbody`).innerHTML = html;
-  // document.querySelectorAll(`${ID4} i.fa-edit`).forEach((e, i) => {
-  //   e.addEventListener("click", () => {
-  //     let d = data.filter((d) => d.rowid == e.getAttribute("rowid"))[0];
-  //     document.querySelector(`${ID4} input[name='rowid']`).value = d.rowid;
-  //     id4FieldsList.forEach((f) => {
-  //       document.querySelector(`${ID4} input[name='${f}']`).value = d[f];
-  //     });
-  //     document.querySelector(`${ID4} .mode`).textContent = "編集";
-  //     document.querySelector(`${ID4} .mode`).classList.add("text-warning");
-  //   });
-  // });
-  // document.querySelectorAll(`${ID4} i.fa-trash-can`).forEach((e, i) => {
-  //   e.addEventListener("click", async () => {
-  //     // console.log("trash");
-  //     let rowid = e.getAttribute("rowid");
-  //     if (rowid) {
-  //       where = `rowid = ${rowid}`;
-  //       let res = await window.eAPI.accessDb("SEASON", "delete", null, { cond: where });
-  //       // console.log(res);
-  //       if (res && res.err) showErrToast([res.err]);
-  //       else showOkToast(["1つのシーズン情報の削除に成功しました。"]);
-  //       getId4data(); // 再表示
-  //     }
-  //   });
-  // });
-};
+  document.querySelector(`${ID1} .mode`).textContent = "新規";
+  document.querySelector(`${ID1} .mode`).classList.remove("text-warning");
+}
+function mleageNewEntry() {
+  document.querySelector(`${ID1} [name="_id"]`).value = "";
+  document.querySelector(`${ID1} [name="chanel"]`).value = "mahjong";
+  document.querySelector(`${ID1} [name="title"]`).value = "Mリーグ";
+  document.querySelector(`${ID1} [name="start_time"]`).value = "19:00";
+  document.querySelector(`${ID1} [name="end_time"]`).value = "00:00";
+  ["start_date", "end_date"].forEach((n) => {
+    let date = new Date();
+    if (n == "end_date") date.setDate(date.getDate() + 1);
+    flatpickrInit(n, date); // TODO 日付を渡す（既存データ表示時）
+  });
+  for (let i = 0; i < 7; i++) {
+    document.querySelector(`${ID1} [name="day${i}"]`).checked = false;
+  }
+  document.querySelector(`${ID1} .mode`).textContent = "新規";
+  document.querySelector(`${ID1} .mode`).classList.remove("text-warning");
+}
+// 新規で入力する
+document.querySelector(`${ID1} a.new`).addEventListener("click", (e) => {
+  newEntry();
+});
+// Mリーグ用の入力補助する
+document.querySelector(`${ID1} a.mleague`).addEventListener("click", (e) => {
+  mleageNewEntry();
+});
+// Mリーグ用の入力補助する
+document.querySelector(`${ID2} button.redisp`).addEventListener("click", (e) => {
+  getBookedList();
+});
+getBookedList();
+newEntry();
 // document.querySelector(`${ID4} button.redisp`).addEventListener("click", getId4data);
 // document.querySelector(`${ID4} a.new`).addEventListener("click", () => {
 //   document.querySelector(`${ID4} input[name='rowid']`).value;

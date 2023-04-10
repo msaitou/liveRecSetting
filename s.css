@@ -1,0 +1,22 @@
+/* .bd-example {
+  position: relative;
+  padding: 1rem;
+  margin: 1rem -0.75rem 0;
+  border: solid #dee2e6;
+  border-width: 1px 0 0;
+}
+
+.bd-example::after {
+  display: block;
+  clear: both;
+  content: "";
+} */
+.scrollspy-example {
+  position: relative;
+  height: 600px;
+  margin-top: .5rem;
+  overflow-x: hidden
+}
+input.flatpickr-input[readonly] {
+  background: #fff;
+}

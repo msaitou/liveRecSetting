@@ -1,10 +1,11 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- https://developer.mozilla.org/ja/docs/Web/HTTP/CSP -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' data: http://localhost:3333/ https://cdn.jsdelivr.net https://blogger.googleusercontent.com https://asia-northeast1-abema-383005.cloudfunctions.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net"
+      content="default-src 'self' data: http://localhost:3333/ https://cdn.jsdelivr.net https://blogger.googleusercontent.com https://asia-northeast1-abema-383005.cloudfunctions.net https://cdnjs.cloudflare.com ; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net"
     />
     <title>Abema放送中録画設定くん</title>
     <link
@@ -13,103 +14,144 @@
       integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC"
       crossorigin="anonymous"
     />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link rel="stylesheet" href="./s.css" />
     <link
       rel="icon"
       href="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhtmmO3zZyAZ6JuiKQOO51NAV9raL77S5GSYhM-HQHFTCA-m74dXT1gLhGf7y5NMXt-kh_1oFWJFjf4-bswdPsF8Yu8CnJ22hRQNFYAwNG_k1N6K0VDIBCdZq-Sz5dntvU9E7tAbFYkrcHuQdginLtZfsY6U8ZXog5762AZ1D3LYNPOZ0Ntk6ku789-eg/s128/m.ico"
     />
   </head>
   <body class="overflow-hidden">
-
-<!-- 予約済み一覧（削除・編集） -->
-<!-- 予約登録　タイトル　開始日付時刻、終了日付時刻（デフォは19時、0時）毎曜日設定 -->
-<!--  -->
-<!-- かぶり期間のバリデーション（登録不可） -->
-<!-- configにDBのhost書いて、クライアント側のindex.jsで読み込む -->
-<!-- streamlinkのふるまい　node-abema -->
-<!-- 5分timer -->
-<!-- 予約/済みCOL -->
-<!-- 保存先InfoのCOL 残りHDD容量-->
-<!-- m.js側に、setTimeoutで、毎日1時くらいに登録済みのデータを見て、毎回trueなら、次の予定を作成して登録しておく -->
-    <div class="container-fluid mx-1 fs-7">
-      <ul class="nav nav-tabs active">
-        <li class="nav-item active">
-          <a class="nav-link p-2 active" href="#t4" data-bs-toggle="tab">シーズン</a>
-        </li>
-      </ul>
-      <div class="tab-content">
-        <div id="t4" class="tab-pane active">
-          <div class="container-fluid mt-2 mx-3">
-            <div class="row mb-4">
-              <h6 class="fw-bold mode">新規</h6>
-              <div class="col-12">
-                <div class="row">
-                  <label class="col-3 col-form-label">年度 </label>
-                  <div class="col-6">
-                    <input name="rowid" type="hidden" />
-                    <input class="form-control" name="year" placeholder="YYYY" />
-                  </div>
-                </div>
-              </div>
-              <div class="col-12">
-                <div class="row">
-                  <label class="col-3 col-form-label">シーズンキー </label>
-                  <div class="col-6">
-                    <input class="form-control" name="url_key" />
-                  </div>
-                  <span class="fs-8 offset-3 col-6">牌譜ビューアのURLの?game_id=以降の文字列です</span>
-                  <span class="fs-8 offset-3 col-6"
-                    >2018のレギュラーシーズン（https://viewer.ml-log.jp/web/viewer?gameid=L001_S001_0003_01A）は、L001_S001です。
-                  </span>
-                </div>
-              </div>
-              <div class="col-12">
-                <div class="row">
-                  <label class="col-3 col-form-label">シーズン種別</label>
-                  <div class="col-6">
-                    <input class="form-control" name="kind" />
-                  </div>
-                  <span class="fs-8 offset-3 col-6">R:レギュラー、S:セミファイナル、F:ファイナル の英1文字</span>
-                </div>
-              </div>
-              <div class="col-12">
-                <div class="row">
-                  <label class="col-3 col-form-label">シーズン開始日 </label>
-                  <div class="col-6">
-                    <input class="form-control" name="start_date" placeholder="YYYYMMDD" />
-                  </div>
-                </div>
-              </div>
-              <div class="col-10">
-                <div class="d-flex justify-content-end">
-                  <a href="#" class="pe-4 new">新規で入力する</a>
-                  <button class="btn btn-sm btn-primary save">保存</button>
+    <div class="container-fluid">
+      <!-- streamlinkのふるまい　node-abema -->
+      <!-- 保存先InfoのCOL 残りHDD容量-->
+      <nav id="navbar-example2" class="navbar navbar-light bg-light px-3">
+        <a class="navbar-brand" href="#">Abema放送中録画設定くん</a>
+        <ul class="nav nav-pills">
+          <li class="nav-item">
+            <a class="nav-link" href="#bookedlist">予約済み一覧</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#addedit">登録編集</a>
+          </li>
+        </ul>
+      </nav>
+      <div
+        data-bs-spy="scroll"
+        data-bs-target="#navbar-example2"
+        data-bs-offset="0"
+        class="scrollspy-example bg-light"
+        tabindex="0"
+      >
+        <div class="container-fluid mt-2 mx-3" id="bookedlist">
+          <h4>予約済み一覧</h4>
+          <div class="row">
+            <h6 class="fw-bold">
+              登録済みのシーズン情報　<button class="btn btn-sm py-0 btn-secondary redisp">再表示</button>
+            </h6>
+            <table class="table table-sm table-striped table-hover fs-7 table-season ms-2">
+              <thead class="">
+                <tr>
+                  <th>タイトル</th>
+                  <th>録画日時</th>
+                  <th>チャンネル</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody class=""></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="container-fluid mt-2 mx-3" id="addedit">
+          <h4>登録編集</h4>
+          <div class="row mb-4">
+            <h6 class="fw-bold mode">新規</h6>
+            <div class="col-12 mb-2">
+              <div class="row">
+                <label class="col-3 col-form-label">チャンネル </label>
+                <div class="col-6">
+                  <input name="_id" type="hidden" />
+                  <select class="form-select" name="chanel" placeholder="YYYY">
+                    <option>mahjong</option>
+                    <option>abema-news</option>
+                  </select>
                 </div>
               </div>
             </div>
-            <div class="row">
-              <h6 class="fw-bold">
-                登録済みのシーズン情報　<button class="btn btn-sm py-0 btn-secondary redisp">再表示</button>
-              </h6>
-              <table class="table table-sm table-striped table-hover fs-7 table-season ms-2">
-                <thead class="">
-                  <tr>
-                    <th>年度</th>
-                    <th>シーズンキー</th>
-                    <th>シーズン種別</th>
-                    <th>シーズン開始日</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody class=""></tbody>
-              </table>
+            <div class="col-12 mb-2">
+              <div class="row">
+                <label class="col-3 col-form-label">タイトル </label>
+                <div class="col-6">
+                  <input class="form-control" name="title" />
+                </div>
+              </div>
+            </div>
+            <div class="col-12 mb-2">
+              <div class="row">
+                <label class="col-3 col-form-label">開始日時 </label>
+                <div class="col-3 pe-0">
+                  <input class="form-control" name="start_date" type="date" />
+                </div>
+                <div class="col-3 ps-0">
+                  <input class="form-control" type="time" name="start_time" />
+                </div>
+              </div>
+            </div>
+            <div class="col-12 mb-2">
+              <div class="row">
+                <label class="col-3 col-form-label">終了日時 </label>
+                <div class="col-3 pe-0">
+                  <input class="form-control" name="end_date" />
+                </div>
+                <div class="col-3 ps-0">
+                  <input class="form-control" type="time" name="end_time" />
+                </div>
+              </div>
+            </div>
+            <div class="col-12 mb-2">
+              <div class="row">
+                <label class="col-3 col-form-label">繰り返し </label>
+                <div
+                  class="btn-group btn-group-sm py-1 col-6"
+                  role="group"
+                  aria-label="Basic checkbox toggle button group"
+                >
+                  <input type="checkbox" class="btn-check" id="day0" name="day0" />
+                  <label class="btn btn-outline-dark me-1" for="day0">日</label>
+                  <input type="checkbox" class="btn-check" id="day1" name="day1" />
+                  <label class="btn btn-outline-dark me-1" for="day1">月</label>
+                  <input type="checkbox" class="btn-check" id="day2" name="day2" />
+                  <label class="btn btn-outline-dark me-1" for="day2">火</label>
+                  <input type="checkbox" class="btn-check" id="day3" name="day3" />
+                  <label class="btn btn-outline-dark me-1" for="day3">水</label>
+                  <input type="checkbox" class="btn-check" id="day4" name="day4" />
+                  <label class="btn btn-outline-dark me-1" for="day4">木</label>
+                  <input type="checkbox" class="btn-check" id="day5" name="day5" />
+                  <label class="btn btn-outline-dark me-1" for="day5">金</label>
+                  <input type="checkbox" class="btn-check" id="day6" name="day6" />
+                  <label class="btn btn-outline-dark" for="day6">土</label>
+                </div>
+              </div>
+            </div>
+            <div class="col-10">
+              <div class="d-flex justify-content-end">
+                <a href="#" class="pe-4 mleague">Mリーグ</a>
+                <a href="#" class="pe-4 new">新規で入力する</a>
+                <button class="btn btn-sm btn-primary save">保存</button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <div class="row log px-3">
-        <div class="border bg-light"></div>
-      </div>
     </div>
+
     <!-- 処理中の待ち -->
     <div class="position-absolute top-50 start-50 fs-3 bg-dark bg-opacity-50 text-white p-3 rounded d-none loading">
       waitting...
@@ -132,6 +174,8 @@
       integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
       crossorigin="anonymous"
     ></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ja.js"></script>
     <script src="./config.js"></script>
     <script src="./index.js"></script>
   </body>
