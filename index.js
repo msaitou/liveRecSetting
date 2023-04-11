@@ -1,5 +1,3 @@
-const { DB_INFO } = require("./config");
-
 const ID1 = "#addedit"; // シーズン
 const ID2 = "#bookedlist"; // アカウントタブ
 
