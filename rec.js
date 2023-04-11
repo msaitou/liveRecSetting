@@ -202,7 +202,7 @@ async function mainWin() {
             // 1週間後までの間で登録していない日付を割り出す。
             // 登録済みのデータで存在しない日付をフィルタリング
             let fDates = []; // 1週間の日付配列
-            for (let i = 0; i < 7; i++) {
+            for (let i = 1; i < 8; i++) {
               let d = new Date();
               d.setDate(d.getDate() + i);
               fDates.push(d.toLocaleDateString());
