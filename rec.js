@@ -1,6 +1,7 @@
 // winかlinuxかでコマンドが変わるだけ
 const { spawn } = require("child_process");
 const { DB_INFO } = require("./config.js");
+const fs = require("fs");
 const IS_WIN = process.platform === "win32";
 const IS_LINUX = process.platform === "linux";
 const PS = {
@@ -158,9 +159,9 @@ async function mainWin() {
           `-p`,
           DB_INFO.REC.PLAYER,
           `https://abema.tv/now-on-air/${candi[0].chanel}`,
-          `360p`,
+          `480p`,
           `-o`,
-          `${DB_INFO.REC.DIR}${candi[0].title}.mp4`,
+          `${DB_INFO.REC.DIR}${candi[0].title}.ts`,
           `--hls-duration`,
           jifunStr, // [HH:]MM:SS
         ];
@@ -185,10 +186,35 @@ async function mainWin() {
           child = spawn("powershell.exe", ["-Command", "-"]);
           await child.stdin.write(PS_KILL_CMD + "\n");
           child.stdin.end();
+          await sleep(2000);
+          // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
+          const PS_CMD_FFMPEG = `& ${DB_INFO.FFMPEG} -i "${DB_INFO.REC.DIR}${candi[0].title}.ts" -vcodec copy -acodec copy "${DB_INFO.REC.DIR}${candi[0].title}.mp4"`;
+          child = spawn("powershell.exe", ["-Command", "-"]);
+          let ok = () => {
+            return new Promise((res, rej) => {
+              child.stdout.on("end", function (data) {
+                console.log("end");
+                res();
+              });
+            });
+          };
+          child.stdout.on("data", function (data) {
+            let stout = data.toString();
+            stout = stout.split("\n").join("").split("\r").join("").trim();
+            if (stout) console.log("stdout: " + stout), (self.stout += stout);
+          });
+          child.stderr.on("data", function (data) {
+            self.sterr = data.toString();
+            console.log("stderr: " + self.sterr);
+          });
+          await child.stdin.write(PS_CMD_FFMPEG + "\n");
+          child.stdin.end();
+          await ok();
           // await ok();
           // console.log("ok:  ", self.stout);
           console.log("録画終了"); // --hls-duration [HH:]MM:SS
-
+          fs.unlinkSync(`${DB_INFO.REC.DIR}${candi[0].title}.ts`);
+          console.log("元ファイルを削除しました"); // --hls-duration [HH:]MM:SS
           // console.log(data);
           // そのあと、bookedの中に繰り返しがありそれが、1週間後までの間に無ければ、コピーして登録
           let srcRecs = {};
@@ -430,7 +456,15 @@ if (IS_LINUX) {
         console.log(JSON.stringify(data3));
       }
     }
-    sss();
+    async function ddd() {
+      // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
+      const PS_CMD_FFMPEG = `& ${DB_INFO.FFMPEG} -i "${DB_INFO.REC.DIR}test.ts" -vcodec copy -acodec copy "${DB_INFO.REC.DIR}test.mp4"`;
+      let child = spawn("powershell.exe", ["-Command", "-"]);
+      await child.stdin.write(PS_CMD_FFMPEG + "\n");
+      child.stdin.end();
+    }
+    // sss();
+    ddd();
   } catch (e) {
     console.log(e);
   }
