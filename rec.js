@@ -254,7 +254,7 @@ async function mainWin() {
                   eDate.setHours(sRec.end_time.substr(0, 2), sRec.end_time.substr(3, 2), 0, 0);
                   sRec.end_date = eDate;
                   if (sRec.end_date < sRec.start_date) sRec.end_date.setDate(sRec.end_date.getDate() + 1);
-                  sRec.title += `_${getYYMMDDStr(sDate)}`;
+                  sRec.title = sRec.title.substr(0, sRec.title.indexOf("_")) + `_${getYYMMDDStr(sDate)}`;
                   saveDatas.push(sRec);
                 }
               }
