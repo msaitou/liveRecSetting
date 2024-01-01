@@ -1,5 +1,5 @@
 // winかlinuxかでコマンドが変わるだけ
-const { spawn } = require("child_process");
+const { execSync, spawn } = require("child_process");
 const { DB_INFO } = require("./config.js");
 const fs = require("fs");
 const IS_WIN = process.platform === "win32";
@@ -367,7 +367,7 @@ async function mainLinux() {
       candi = candi.sort((a, b) => (a.start_date < b.start_date ? -1 : 1));
       // 複数ある想定
       candi.reduce(async (a, candiLine) => {
-      console.log(5);
+        console.log(5);
         // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
         let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
         console.log("sleep前", new Date().toLocaleString(), sleepTime);
@@ -471,7 +471,7 @@ async function mainLinux() {
         } catch (e) {
           console.log(e);
         }
-      });
+      }, null);
 
       try {
         // console.log(data);
