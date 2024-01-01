@@ -365,13 +365,14 @@ async function mainLinux() {
       console.log(4);
       //オブジェクトの昇順ソート
       candi = candi.sort((a, b) => (a.start_date < b.start_date ? -1 : 1));
+      let cnt = 0;
       // 複数ある想定
-      candi.reduce(async (a, candiLine) => {
+      candi.reduce(async (a, candiLine, index) => {
         console.log(5);
         // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
         let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
         console.log("sleep前", new Date().toLocaleString(), sleepTime);
-        await sleep(sleepTime);
+        await sleep(sleepTime + (cnt++ * 1000));
         console.log("sleep後", new Date().toLocaleString());
         const getJifunStr = (t1, t2) => {
           let diff = t1.getTime() - t2.getTime();
