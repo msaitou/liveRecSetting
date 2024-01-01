@@ -342,7 +342,7 @@ async function mainLinux() {
       ...comApiData,
       coll: "booked",
       method: "find",
-      cond: { status: { $ne: "済" } },
+      cond: { status: null },
     };
     console.log(2);
     let data = await reqApi({
@@ -409,6 +409,7 @@ async function mainLinux() {
 
           // このプロセスIDを取得。これをkillすることで録画終了
           console.log(child.pid);
+          await updateRec(comApiData, candiLine._id, "中");
           let recTime = new Date(candiLine.end_date).getTime() - new Date(candiLine.start_date).getTime();
           await sleep(recTime); // 終了時間までのミリ秒待機。
           const PS_KILL_CMD = `${PS.LINUX.PS.KILL_CMD}${child.pid}`;
@@ -431,20 +432,7 @@ async function mainLinux() {
           console.log("録画終了"); // --hls-duration [HH:]MM:SS
           fs.unlinkSync(`${DB_INFO.REC.DIR}${candiLine.title}.ts`);
           console.log("元ファイルを削除しました"); // --hls-duration [HH:]MM:SS
-          // 登録済みにする
-          let updateData = {
-            ...comApiData,
-            coll: "booked",
-            method: "update",
-            cond: { _id: candiLine._id },
-            opt: { doc: { status: "済" } },
-          };
-          let data2 = await reqApi({
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updateData),
-          });
-          console.log(JSON.stringify(data2));
+          await updateRec(comApiData, candiLine._id, "済");
 
           let delRec = data.filter(
             (d) => new Date(d.start_date).getTime() < new Date().getTime() - 24 * 60 * 60 * 1000
@@ -548,4 +536,20 @@ if (IS_LINUX || IS_ANDROID) {
   mainLinux();
 } else {
   mainWin();
+}
+async function updateRec(comApiData, id, status) {
+  // 登録済みにする
+  let updateData = {
+    ...comApiData,
+    coll: "booked",
+    method: "update",
+    cond: { _id: id },
+    opt: { doc: { status: status } },
+  };
+  let data2 = await reqApi({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updateData),
+  });
+  console.log(JSON.stringify(data2));
 }
