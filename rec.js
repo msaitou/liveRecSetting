@@ -4,6 +4,7 @@ const { DB_INFO } = require("./config.js");
 const fs = require("fs");
 const IS_WIN = process.platform === "win32";
 const IS_LINUX = process.platform === "linux";
+const IS_ANDROID = process.platform === "android";
 const PS = {
   WIN: {
     PS: {
@@ -543,7 +544,7 @@ async function mainLinux() {
   await monitoring();
   setInterval(monitoring, 5 * 1000 * 60); // 5分毎にチェックでエンドレス
 }
-if (IS_LINUX) {
+if (IS_LINUX || IS_ANDROID) {
   mainLinux();
 } else {
   mainWin();
