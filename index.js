@@ -104,10 +104,10 @@ document.querySelector(`${ID1} button.save`).addEventListener("click", async () 
   let oid = document.querySelector(`${ID1} input[name='_id']`).value;
   bookedList.forEach((b) => {
     if (b._id == oid) return;
-    if (doc.start_date <= new Date(b.start_date) && doc.end_date >= new Date(b.start_date))
-      messageList.push("登録済みの録画日時と重複します");
-    if (new Date(b.start_date) <= doc.start_date && new Date(b.end_date) >= doc.start_date)
-      messageList.push("登録済みの録画日時と重複します2");
+    // if (doc.start_date <= new Date(b.start_date) && doc.end_date >= new Date(b.start_date))
+    //   messageList.push("登録済みの録画日時と重複します");
+    // if (new Date(b.start_date) <= doc.start_date && new Date(b.end_date) >= doc.start_date)
+    //   messageList.push("登録済みの録画日時と重複します2");
   });
   if (messageList.length) {
     showErrToast(messageList);
