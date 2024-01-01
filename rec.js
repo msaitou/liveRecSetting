@@ -322,7 +322,7 @@ async function mainWin() {
   await setInterval(monitoring, 5 * 1000 * 60); // 5分毎にチェックでエンドレス
   // await setInterval(monitoring, 20 * 1000); // 6分毎にチェックでエンドレス
 }
-if (IS_LINUX) {
+async function mainLinux() {
   let count = 0;
   const PS_CHECK_CMD = `${PS.LINUX.PS.CHECK_CMD}${PS.LINUX.PS.NAME}`;
   const monitoring = async () => {
@@ -541,7 +541,10 @@ if (IS_LINUX) {
     }
   };
   await monitoring();
-  await setInterval(monitoring, 5 * 1000 * 60); // 5分毎にチェックでエンドレス
+  setInterval(monitoring, 5 * 1000 * 60); // 5分毎にチェックでエンドレス
+}
+if (IS_LINUX) {
+  mainLinux();
 } else {
   mainWin();
 }
