@@ -415,7 +415,7 @@ async function mainLinux() {
           await sleep(recTime); // 終了時間までのミリ秒待機。
           const PS_KILL_CMD = `${PS.LINUX.PS.KILL_CMD}${child.pid}`;
           // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
-          const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${DB_INFO.REC.DIR}${candiLine.title}.ts" -vcodec copy -acodec copy "${DB_INFO.REC.DIR}${candiLine.title}.mp4"`;
+          const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${DB_INFO.REC.DIR}${candiLine.title}.ts" -vcodec copy -acodec copy "${DB_INFO.REC.OUTPUT}${candiLine.title}.mp4"`;
           try {
             console.log(8);
             const stdout = execSync(PS_KILL_CMD);
