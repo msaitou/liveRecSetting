@@ -531,7 +531,7 @@ async function mainLinux() {
     }
   };
   await monitoring();
-  setInterval(monitoring, 5 * 1000 * 60); // 5分毎にチェックでエンドレス
+  setInterval(monitoring, 1 * 1000 * 60); // 1分毎にチェックでエンドレス
 }
 if (IS_LINUX || IS_ANDROID) {
   mainLinux();
