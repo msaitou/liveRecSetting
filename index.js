@@ -155,11 +155,12 @@ let getBookedList = async (cond = { status: { $ne: "済" } }) => {
   bookedList = data;
   // オブジェクトの昇順ソート
   data.sort((a, b) => (a.start_date > b.start_date ? 1 : -1));
+  let jifunStr = (d) => new Date(d).toLocaleString().replace(/:00$/, "");
   data.forEach((d) => {
     html += `<tr>`;
     html += `<td>${d.title}</td>`;
     html += `<td>${d.status ? d.status : ""}</td>`;
-    html += `<td>${new Date(d.start_date).toLocaleString()}~${new Date(d.end_date).toLocaleTimeString()}</td>`;
+    html += `<td>${jifunStr(d.start_date)}~${jifunStr(d.end_date)}</td>`;
     html += `<td>${d.chanel}</td>`;
     html += `<td><i class="btn btn-sm btn-dark me-1 py-0 fas fa-edit" oid="${d._id}"></i>
     <i class="btn btn-sm btn-dark me-1 py-0 fas fa-trash-can" oid="${d._id}"></i></td></tr>`;
@@ -245,6 +246,12 @@ document.querySelector(`${ID1} a.new`).addEventListener("click", (e) => {
 // Mリーグ用の入力補助する
 document.querySelector(`${ID1} a.mleague`).addEventListener("click", (e) => {
   mleageNewEntry();
+});
+// 時刻の入力補助
+document.querySelectorAll(`${ID1} [name$="_time"][type="time"]`).forEach(el => {
+  el.addEventListener("dblclick", (e) => {
+    e.target.value = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  });
 });
 // Mリーグ用の入力補助する
 document.querySelector(`${ID2} button.redisp`).addEventListener("click", (e) => {
