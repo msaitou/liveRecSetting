@@ -530,8 +530,13 @@ async function mainLinux() {
       }
     }
   };
-  await monitoring();
-  setInterval(monitoring, 1 * 1000 * 60); // 1分毎にチェックでエンドレス
+  const monitoringWithTimeout = async () => {
+    await monitoring();
+    setTimeout(monitoringWithTimeout, 1 * 1000 * 60); // 5分毎にチェック
+  };
+  monitoringWithTimeout(); // 関数を呼び出して開始
+  // await monitoring();
+  // setInterval(monitoring, 1 * 1000 * 60); // 1分毎にチェックでエンドレス
 }
 if (IS_LINUX || IS_ANDROID) {
   mainLinux();
