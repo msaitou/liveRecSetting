@@ -370,35 +370,36 @@ async function mainLinux() {
         // 複数ある想定
         candi.reduce(async (a, candiLine, index) => {
           console.log(5);
-          // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
-          let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
-          console.log("sleep前", new Date().toLocaleString(), sleepTime);
-          await sleep(sleepTime + cnt++ * 1000);
-          console.log("sleep後", new Date().toLocaleString());
-          const getJifunStr = (t1, t2) => {
-            let diff = t1.getTime() - t2.getTime();
-            //HH部分取得
-            let diffHour = diff / (1000 * 60 * 60);
-            //MM部分取得
-            let diffMinute = (diffHour - Math.floor(diffHour)) * 60;
-            return `${Math.floor(diffHour).toString().padStart(2, "0")}:${Math.floor(diffMinute)
-              .toString()
-              .padStart(2, "0")}:00`;
-          };
-          let jifunStr = getJifunStr(new Date(candiLine.end_date), new Date(candiLine.start_date));
-
-          let cmds = [
-            `-p`,
-            DB_INFO.REC.PLAYER,
-            `https://abema.tv/now-on-air/${candiLine.chanel}`,
-            `480p`,
-            `-o`,
-            `${DB_INFO.REC.DIR}${candiLine.title}.ts`,
-            `--hls-duration`,
-            jifunStr, // [HH:]MM:SS
-          ];
-          // streamlink -p "C:\Program Files (x86)\GRETECH\GomPlayer\GOM.exe" https://abema.tv/now-on-air/mahjong 360p -o .\test2.mp4
           try {
+            // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
+            let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
+            console.log("sleep前", new Date().toLocaleString(), sleepTime);
+            await updateRec(comApiData, candiLine._id, "中");
+            await sleep(sleepTime + cnt++ * 1000);
+            console.log("sleep後", new Date().toLocaleString());
+            const getJifunStr = (t1, t2) => {
+              let diff = t1.getTime() - t2.getTime();
+              //HH部分取得
+              let diffHour = diff / (1000 * 60 * 60);
+              //MM部分取得
+              let diffMinute = (diffHour - Math.floor(diffHour)) * 60;
+              return `${Math.floor(diffHour).toString().padStart(2, "0")}:${Math.floor(diffMinute)
+                .toString()
+                .padStart(2, "0")}:00`;
+            };
+            let jifunStr = getJifunStr(new Date(candiLine.end_date), new Date(candiLine.start_date));
+
+            let cmds = [
+              `-p`,
+              DB_INFO.REC.PLAYER,
+              `https://abema.tv/now-on-air/${candiLine.chanel}`,
+              `480p`,
+              `-o`,
+              `${DB_INFO.REC.DIR}${candiLine.title}.ts`,
+              `--hls-duration`,
+              jifunStr, // [HH:]MM:SS
+            ];
+            // streamlink -p "C:\Program Files (x86)\GRETECH\GomPlayer\GOM.exe" https://abema.tv/now-on-air/mahjong 360p -o .\test2.mp4
             console.log(6);
             // 起動(非同期)
             let child = spawn(PS.LINUX.PS.NAME, cmds, {
@@ -410,9 +411,8 @@ async function mainLinux() {
             child.unref(); // メインプロセスから切り離す
 
             // このプロセスIDを取得。これをkillすることで録画終了
-            console.log(child.pid);
-            await updateRec(comApiData, candiLine._id, "中");
             let recTime = new Date(candiLine.end_date).getTime() - new Date(candiLine.start_date).getTime();
+            console.log(child.pid, recTime/1000/60, candiLine.title);
             await sleep(recTime); // 終了時間までのミリ秒待機。
             const PS_KILL_CMD = `${PS.LINUX.PS.KILL_CMD}${child.pid}`;
             // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
@@ -461,74 +461,73 @@ async function mainLinux() {
           } catch (e) {
             console.log(e);
           }
-        }, null);
-
-        try {
-          // console.log(data);
-          // そのあと、bookedの中に繰り返しがありそれが、1週間後までの間に無ければ、コピーして登録
-          let srcRecs = {};
-          data.forEach((d) => {
-            let key = `${d.chanel}${d.start_time}`;
-            if (!(key in srcRecs)) srcRecs[key] = [];
-            srcRecs[key].push(d);
-          });
-          let saveDatas = [];
-          if (Object.keys(srcRecs).length) {
-            // 1週間後までの間で登録していない日付を割り出す。
-            // 登録済みのデータで存在しない日付をフィルタリング
-            let fDates = []; // 1週間の日付配列
-            for (let i = 1; i < 8; i++) {
-              let d = new Date();
-              d.setDate(d.getDate() + i);
-              fDates.push(d.toLocaleDateString());
-            }
-            // 登録データから登録されてない日付と日付をキーに元データを詰める
-            for (let [key, lines] of Object.entries(srcRecs)) {
-              let tmpFdate = [...fDates];
-              for (let line of lines) {
-                let dateStr = new Date(line.start_date).toLocaleDateString();
-                if (tmpFdate.indexOf(dateStr) > -1) tmpFdate.splice(tmpFdate.indexOf(dateStr), 1);
+          try {
+            // console.log(data);
+            // そのあと、bookedの中に繰り返しがありそれが、1週間後までの間に無ければ、コピーして登録
+            let srcRecs = {};
+            data.forEach((d) => {
+              let key = `${d.chanel}${d.start_time}`;
+              if (!(key in srcRecs)) srcRecs[key] = [];
+              srcRecs[key].push(d);
+            });
+            let saveDatas = [];
+            if (Object.keys(srcRecs).length) {
+              // 1週間後までの間で登録していない日付を割り出す。
+              // 登録済みのデータで存在しない日付をフィルタリング
+              let fDates = []; // 1週間の日付配列
+              for (let i = 1; i < 8; i++) {
+                let d = new Date();
+                d.setDate(d.getDate() + i);
+                fDates.push(d.toLocaleDateString());
               }
-              if (tmpFdate.length) {
-                for (let fd of tmpFdate) {
-                  let dNum = new Date(fd).getDay();
-                  let sRec = { ...lines[0] };
-                  if (!sRec[`day${dNum}`]) continue; // この曜日が無効ならスキップ
-                  delete sRec._id;
-                  let sDate, eDate;
-                  sDate = new Date(fd);
-                  sDate.setHours(sRec.start_time.substr(0, 2), sRec.start_time.substr(3, 2), 0, 0);
-                  sRec.start_date = sDate;
-                  eDate = new Date(fd);
-                  eDate.setHours(sRec.end_time.substr(0, 2), sRec.end_time.substr(3, 2), 0, 0);
-                  sRec.end_date = eDate;
-                  if (sRec.end_date < sRec.start_date) sRec.end_date.setDate(sRec.end_date.getDate() + 1);
-                  sRec.title = sRec.title.substr(0, sRec.title.indexOf("_")) + `_${getYYMMDDStr(sDate)}`;
-                  saveDatas.push(sRec);
+              // 登録データから登録されてない日付と日付をキーに元データを詰める
+              for (let [key, lines] of Object.entries(srcRecs)) {
+                let tmpFdate = [...fDates];
+                for (let line of lines) {
+                  let dateStr = new Date(line.start_date).toLocaleDateString();
+                  if (tmpFdate.indexOf(dateStr) > -1) tmpFdate.splice(tmpFdate.indexOf(dateStr), 1);
+                }
+                if (tmpFdate.length) {
+                  for (let fd of tmpFdate) {
+                    let dNum = new Date(fd).getDay();
+                    let sRec = { ...lines[0] };
+                    if (!sRec[`day${dNum}`]) continue; // この曜日が無効ならスキップ
+                    delete sRec._id;
+                    let sDate, eDate;
+                    sDate = new Date(fd);
+                    sDate.setHours(sRec.start_time.substr(0, 2), sRec.start_time.substr(3, 2), 0, 0);
+                    sRec.start_date = sDate;
+                    eDate = new Date(fd);
+                    eDate.setHours(sRec.end_time.substr(0, 2), sRec.end_time.substr(3, 2), 0, 0);
+                    sRec.end_date = eDate;
+                    if (sRec.end_date < sRec.start_date) sRec.end_date.setDate(sRec.end_date.getDate() + 1);
+                    sRec.title = sRec.title.substr(0, sRec.title.indexOf("_")) + `_${getYYMMDDStr(sDate)}`;
+                    saveDatas.push(sRec);
+                  }
                 }
               }
+              console.log(JSON.stringify(saveDatas));
+              if (saveDatas.length) {
+                let insertData = {
+                  host: DB_INFO.HOST,
+                  dbName: DB_INFO.DB_NAME,
+                  coll: "booked",
+                  method: "insertMany",
+                  opt: { doc: saveDatas },
+                };
+                let data = await reqApi({
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(insertData),
+                });
+                console.log(JSON.stringify(data));
+              }
             }
-            console.log(JSON.stringify(saveDatas));
-            if (saveDatas.length) {
-              let insertData = {
-                host: DB_INFO.HOST,
-                dbName: DB_INFO.DB_NAME,
-                coll: "booked",
-                method: "insertMany",
-                opt: { doc: saveDatas },
-              };
-              let data = await reqApi({
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(insertData),
-              });
-              console.log(JSON.stringify(data));
-            }
+            // そのあと、bookedの中に繰り返しがありそれが、1週間後までの間に無ければ、コピーして登録
+          } catch (e) {
+            console.log(e);
           }
-          // そのあと、bookedの中に繰り返しがありそれが、1週間後までの間に無ければ、コピーして登録
-        } catch (e) {
-          console.log(e);
-        }
+        }, null);
       }
     } catch (e) {
       console.log(e);
