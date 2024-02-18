@@ -412,6 +412,8 @@ async function mainLinux() {
 
             // このプロセスIDを取得。これをkillすることで録画終了
             let recTime = new Date(candiLine.end_date).getTime() - new Date(candiLine.start_date).getTime();
+            // 開始時間から遅れて始める場合は、今から終了時間までの時間にする必要あり
+            if (new Date(candiLine.start_date) < now) recTime = new Date(candiLine.end_date).getTime() - now.getTime();
             console.log(child.pid, recTime/1000/60, candiLine.title);
             await sleep(recTime); // 終了時間までのミリ秒待機。
             const PS_KILL_CMD = `${PS.LINUX.PS.KILL_CMD}${child.pid}`;
