@@ -345,14 +345,14 @@ async function mainLinux() {
         method: "find",
         cond: { status: null },
       };
-      console.log(2);
+      // console.log(2);
       let data = await reqApi({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(findData),
       });
       data = data.rec;
-      console.log(3);
+      // console.log(3);
       // console.log(data);
       let candi = [];
       let now = new Date();
@@ -400,7 +400,7 @@ async function mainLinux() {
               jifunStr, // [HH:]MM:SS
             ];
             // streamlink -p "C:\Program Files (x86)\GRETECH\GomPlayer\GOM.exe" https://abema.tv/now-on-air/mahjong 360p -o .\test2.mp4
-            console.log(6);
+            // console.log(6);
             // 起動(非同期)
             let child = spawn(PS.LINUX.PS.NAME, cmds, {
               // shell: true,
@@ -429,7 +429,7 @@ async function mainLinux() {
             try {
               console.log(9);
               const stdout = execSync(PS_CMD_FFMPEG);
-              console.log(stdout.toString());
+              // console.log(stdout.toString()); // この出力がかなりでかくなることがある
             } catch (e) {
               console.log(e.toString());
             }
