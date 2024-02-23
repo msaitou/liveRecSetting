@@ -431,7 +431,8 @@ async function mainLinux() {
               const stdout = execSync(PS_CMD_FFMPEG);
               // console.log(stdout.toString()); // この出力がかなりでかくなることがある
             } catch (e) {
-              console.log(e.toString());
+              console.log("some error!!!");
+              // console.log(e.toString());
             }
             console.log("録画終了"); // --hls-duration [HH:]MM:SS
             fs.unlinkSync(`${DB_INFO.REC.DIR}${candiLine.title}.ts`);
