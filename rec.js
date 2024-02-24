@@ -89,28 +89,6 @@ async function mainWin() {
     }
     if (self.stout) isLive = true;
     self = { stout: "", sterr: "" };
-    if (isLive) {
-      //   console.log("生きてるよ");
-      //   let fileStatus = fs.statSync(LOG_FILE);
-      //   // 生きてる場合、ログファイルの更新時間を取得
-      //   if (lastLogTime) {
-      //     // 前回の更新時間と比較
-      //     console.log(
-      //       lastLogTime.toString(),
-      //       fileStatus.mtime.toString(),
-      //       lastLogTime.toString() === fileStatus.mtime.toString()
-      //     );
-      //     if (lastLogTime.toString() === fileStatus.mtime.toString()) {
-      //       // 変化がなければプロセスをキルする
-      //       // const stdout = execSync(PS_KILL_CMD);
-      //       // console.log('dededede');
-      //       isLive = false;
-      //     }
-      //     // 変化があれば何もしない
-      //   }
-      //   console.log(fileStatus.mtime);
-      //   lastLogTime = fileStatus.mtime;
-    }
     if (!isLive) {
       // あんまりDB問い合わせたくないからとりあえず、1タスクで。並列実行は可能だが。
 
@@ -329,15 +307,7 @@ async function mainLinux() {
   const monitoring = async () => {
     try {
       console.log(count++);
-      try {
-        const stdout = execSync(PS_CHECK_CMD);
-        console.log(stdout.toString());
-        isLive = true;
-      } catch (e) {
-        console.log("暇です"); // 生きてない
-      }
       console.log(1);
-      self = { stout: "", sterr: "" };
       // DBから持ってきて、未来の開始日の内、5分以内のデータを絞る。あれば進。
       let findData = {
         ...comApiData,
