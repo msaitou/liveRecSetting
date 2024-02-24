@@ -12,7 +12,7 @@ if (IS_LINUX || IS_ANDROID) {
   const job = schedule.scheduleJob(schePara, function () {
     const interval = setInterval(function () {
       // 他のNode.jsプロセスを取得
-      exec("pgrep -l node", (err, stdout, stderr) => {
+      exec("pgrep -l -x node", (err, stdout, stderr) => {
         if (err) {
           console.error(`exec error: ${err}`);
           return;
@@ -21,25 +21,17 @@ if (IS_LINUX || IS_ANDROID) {
         // 各行を解析
         stdout.split("\n").forEach((line) => {
           const parts = line.split(" ");
-
-          if (parts.length === 2) {
-            const pid = parts[0];
-            const name = parts[1];
-
-            // 新たなプロセス以外のNode.jsプロセスを終了
-            if (name === "node") {
+          if (parts.length === 2)
+            if (parts[1] === "node") {
+              // 新たなプロセス以外のNode.jsプロセスを終了
               isKilled = true;
-              process.kill(pid);
-              console.log(`Killed process with PID: ${pid}`);
+              process.kill(parts[0]);
+              console.log(`Killed process with PID: ${parts[0]}`);
             }
-          }
         });
         if (isKilled) {
           // 新たなプロセスを起動
-          // const newProcess = exec("node rec.js");
-          // console.log(`New process started with PID: ${newProcess.pid}`);
-          child = spawn("node", ["rec.js"], {
-            // shell: true,
+          child = spawn("nohup", ["node", "rec.js"], {
             stdio: "ignore", // piping all stdio to /dev/null
             detached: true, // メインプロセスから切り離す設定
             env: process.env, // NODE_ENV を tick.js へ与えるため
@@ -63,3 +55,5 @@ if (IS_LINUX || IS_ANDROID) {
 // nodeのエイリアスを作る？
 // 時間過ぎたやつを強制済にする処理をrecに追加
 // ln -s /data/data/com.termux/files/usr/bin/node /data/data/com.termux/files/home/liveRecSetting/nodekill
+// logcatの出力を保存する
+// nohupに出力できるようにする
