@@ -19,7 +19,7 @@ if (IS_LINUX || IS_ANDROID) {
         }
         let isKilled = false;
         // 各行を解析
-        if (stdout.split("\n").length === 1) return; 
+        if (stdout.split("\n").length > 2) return;
         stdout.split("\n").forEach((line) => {
           const parts = line.split(" ");
           if (parts.length === 2)
@@ -31,10 +31,10 @@ if (IS_LINUX || IS_ANDROID) {
             }
         });
         if (isKilled) {
-          const out = fs.createWriteStream('nohup.out', { flags: 'a' }); // append mode
+          const out = fs.openSync('nohup.out', 'a'); // append mode
           // 新たなプロセスを起動
           child = spawn("node", ["rec.js"], {
-            stdio: ['ignore', out, 'ignore'], // piping stdout to nohup.out
+            stdio: ["ignore", out, "ignore"], // piping stdout to nohup.out
             // stdio: ['ignore'], // piping stdout to nohup.out
             detached: true, // メインプロセスから切り離す設定
             env: process.env, // NODE_ENV を tick.js へ与えるため
