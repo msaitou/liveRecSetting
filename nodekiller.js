@@ -1,6 +1,6 @@
 const { exec, spawn } = require("child_process");
 const schedule = require("node-schedule");
-
+const fs = require("fs");
 const IS_WIN = process.platform === "win32";
 const IS_LINUX = process.platform === "linux";
 const IS_ANDROID = process.platform === "android";
@@ -19,6 +19,7 @@ if (IS_LINUX || IS_ANDROID) {
         }
         let isKilled = false;
         // 各行を解析
+        if (stdout.split("\n").length === 1) return; 
         stdout.split("\n").forEach((line) => {
           const parts = line.split(" ");
           if (parts.length === 2)
@@ -30,9 +31,11 @@ if (IS_LINUX || IS_ANDROID) {
             }
         });
         if (isKilled) {
+          const out = fs.createWriteStream('nohup.out', { flags: 'a' }); // append mode
           // 新たなプロセスを起動
-          child = spawn("nohup", ["node", "rec.js", ">","nohup.out"], {
-            stdio: "ignore", // piping all stdio to /dev/null
+          child = spawn("node", ["rec.js"], {
+            stdio: ['ignore', out, 'ignore'], // piping stdout to nohup.out
+            // stdio: ['ignore'], // piping stdout to nohup.out
             detached: true, // メインプロセスから切り離す設定
             env: process.env, // NODE_ENV を tick.js へ与えるため
           });
@@ -51,9 +54,4 @@ if (IS_LINUX || IS_ANDROID) {
     }, 15 * 60 * 1000);
   });
 }
-
-// nodeのエイリアスを作る？
-// 時間過ぎたやつを強制済にする処理をrecに追加
-// ln -s /data/data/com.termux/files/usr/bin/node /data/data/com.termux/files/home/liveRecSetting/nodekill
 // logcatの出力を保存する
-// nohupに出力できるようにする
