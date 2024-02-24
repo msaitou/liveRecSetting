@@ -19,7 +19,7 @@ if (IS_LINUX || IS_ANDROID) {
         }
         let isKilled = false;
         // 各行を解析
-        if (stdout.split("\n").length > 2) return;
+        if (stdout.split("\n").length < 3) return;
         stdout.split("\n").forEach((line) => {
           const parts = line.split(" ");
           if (parts.length === 2)
