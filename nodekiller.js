@@ -31,7 +31,7 @@ if (IS_LINUX || IS_ANDROID) {
         });
         if (isKilled) {
           // 新たなプロセスを起動
-          child = spawn("nohup", ["node", "rec.js"], {
+          child = spawn("nohup", ["node", "rec.js", ">","nohup.out"], {
             stdio: "ignore", // piping all stdio to /dev/null
             detached: true, // メインプロセスから切り離す設定
             env: process.env, // NODE_ENV を tick.js へ与えるため
