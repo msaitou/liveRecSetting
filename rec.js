@@ -27,7 +27,8 @@ const comApiData = { host: DB_INFO.HOST, dbName: DB_INFO.DB_NAME };
 const url = "https://asia-northeast1-abema-383005.cloudfunctions.net/mongo-wrapper/m";
 
 const reqApi = (params, query = "") => {
-  return fetch(`${url}${query}`, params)
+  // return fetch(`${url}${query}`, params)
+  return fetch(`${url}${query}`, {...params, timeout: 60000})
     .then((res) => res.json())
     .catch((err) => {
       console.log(err);
