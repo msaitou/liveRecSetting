@@ -308,7 +308,6 @@ async function mainLinux() {
   const monitoring = async () => {
     try {
       console.log(count++);
-      console.log(1);
       // DBから持ってきて、未来の開始日の内、5分以内のデータを絞る。あれば進。
       let findData = {
         ...comApiData,
@@ -403,7 +402,7 @@ async function mainLinux() {
               // console.log(stdout.toString()); // この出力がかなりでかくなることがある
             } catch (e) {
               console.log("some error!!!");
-              // console.log(e.toString());
+              console.log(e.toString());
             }
             console.log("録画終了"); // --hls-duration [HH:]MM:SS
             fs.unlinkSync(`${DB_INFO.REC.DIR}${candiLine.title}.ts`);
