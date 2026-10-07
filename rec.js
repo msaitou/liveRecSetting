@@ -1,5 +1,6 @@
 // winかlinuxかでコマンドが変わるだけ
 const { execSync, spawn } = require("child_process");
+const { createHash } = require("crypto");
 const { DB_INFO } = require("./config.js");
 const fs = require("fs");
 const IS_WIN = process.platform === "win32";
@@ -36,6 +37,14 @@ const reqApi = (params, query = "") => {
     });
 };
 const sleep = (waitTime) => new Promise((resolve) => setTimeout(resolve, waitTime));
+const getRepeatId = (record) => {
+  const identity = JSON.stringify([
+    record.chanel,
+    new Date(record.start_date).toISOString(),
+    record.title,
+  ]);
+  return `repeat:${createHash("sha256").update(identity).digest("hex")}`;
+};
 /**
  * 日付からyymmddの文字列を作成し返す
  * @param {*} date
@@ -233,6 +242,7 @@ async function mainWin() {
                   sRec.end_date = eDate;
                   if (sRec.end_date < sRec.start_date) sRec.end_date.setDate(sRec.end_date.getDate() + 1);
                   sRec.title = sRec.title.substr(0, sRec.title.indexOf("_")) + `_${getYYMMDDStr(sDate)}`;
+                  sRec._id = getRepeatId(sRec);
                   saveDatas.push(sRec);
                 }
               }
@@ -243,7 +253,7 @@ async function mainWin() {
                 host: DB_INFO.HOST,
                 dbName: DB_INFO.DB_NAME,
                 coll: "booked",
-                method: "insertMany",
+                method: "insertManyIfAbsent",
                 opt: { doc: saveDatas },
               };
               let data = await reqApi({
@@ -373,8 +383,10 @@ async function mainLinux() {
             // console.log(6);
             // 起動(非同期)
             let child = spawn(PS.LINUX.PS.NAME, cmds, {
-              // shell: true,
-              stdio: "ignore", // piping all stdio to /dev/null
+              stdio: ["ignore", "inherit", "inherit"],
+                // 標準入力・標準出力・標準エラー
+                // "ignore"：子プロセスの標準入力を使わない
+                // "inherit"：子プロセスの標準出力を、親プロセスと同じ出力先に流す
               detached: true, // メインプロセスから切り離す設定
               env: process.env, // NODE_ENV を tick.js へ与えるため
             });
@@ -384,29 +396,44 @@ async function mainLinux() {
             let recTime = new Date(candiLine.end_date).getTime() - new Date(candiLine.start_date).getTime();
             // 開始時間から遅れて始める場合は、今から終了時間までの時間にする必要あり
             if (new Date(candiLine.start_date) < now) recTime = new Date(candiLine.end_date).getTime() - now.getTime();
-            console.log(child.pid, recTime/1000/60, candiLine.title);
+            const inputPath = `${DB_INFO.REC.DIR}${candiLine.title}.ts`;
+            const outputPath = `${DB_INFO.REC.OUTPUT}${candiLine.title}.mp4`;
+            console.log(`[録画] 開始 ${new Date().toISOString()} title=${candiLine.title} pid=${child.pid} durationMs=${recTime}`);
+            console.log(`[録画] Streamlink出力: ${inputPath}`);
             await sleep(recTime); // 終了時間までのミリ秒待機。
             const PS_KILL_CMD = `${PS.LINUX.PS.KILL_CMD}${child.pid}`;
             // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
-            const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${DB_INFO.REC.DIR}${candiLine.title}.ts" -vcodec copy -acodec copy "${DB_INFO.REC.OUTPUT}${candiLine.title}.mp4" > /dev/null 2>&1`;
+            const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${inputPath}" -vcodec copy -acodec copy "${outputPath}"`;
             try {
-              console.log(8);
+              console.log(`[録画] Streamlink停止 pid=${child.pid}`);
               const stdout = execSync(PS_KILL_CMD);
               // console.log(stdout.toString());
             } catch (e) {
-              console.log(e.toString());
+              console.error(`[録画] Streamlink停止時のエラー: ${e.toString()}`);
             }
             try {
-              console.log(9);
-              const stdout = execSync(PS_CMD_FFMPEG);
-              // console.log(stdout.toString()); // この出力がかなりでかくなることがある
+              if (!fs.existsSync(inputPath)) {
+                throw new Error(`入力TSがありません: ${inputPath}`);
+              }
+              const inputStat = fs.statSync(inputPath);
+              console.log(`[録画] FFmpeg変換開始 inputBytes=${inputStat.size} output=${outputPath}`);
+              console.log(`[録画] FFmpegコマンド: ${PS_CMD_FFMPEG}`);
+              execSync(PS_CMD_FFMPEG, { stdio: "inherit" });
+              if (!fs.existsSync(outputPath)) {
+                throw new Error(`変換後のMP4がありません: ${outputPath}`);
+              }
+              const outputStat = fs.statSync(outputPath);
+              if (!outputStat.isFile() || outputStat.size === 0) {
+                throw new Error(`変換後のMP4が空か通常ファイルではありません: ${outputPath}`);
+              }
+              console.log(`[録画] FFmpeg変換成功 outputBytes=${outputStat.size} output=${outputPath}`);
             } catch (e) {
-              console.log("some error!!!");
-              console.log(e.toString());
+              console.error(`[録画] FFmpeg変換失敗: ${e.toString()}`);
+              throw e;
             }
-            console.log("録画終了"); // --hls-duration [HH:]MM:SS
-            fs.unlinkSync(`${DB_INFO.REC.DIR}${candiLine.title}.ts`);
-            console.log("元ファイルを削除しました"); // --hls-duration [HH:]MM:SS
+            console.log(`[録画] MP4作成確認済み ${new Date().toISOString()}`);
+            fs.unlinkSync(inputPath);
+            console.log(`[録画] 元TSを削除しました: ${inputPath}`);
             await updateRec(comApiData, candiLine._id, "済");
 
             let delRec = data.filter(
@@ -475,6 +502,7 @@ async function mainLinux() {
                     sRec.end_date = eDate;
                     if (sRec.end_date < sRec.start_date) sRec.end_date.setDate(sRec.end_date.getDate() + 1);
                     sRec.title = sRec.title.substr(0, sRec.title.indexOf("_")) + `_${getYYMMDDStr(sDate)}`;
+                    sRec._id = getRepeatId(sRec);
                     saveDatas.push(sRec);
                   }
                 }
@@ -485,7 +513,7 @@ async function mainLinux() {
                   host: DB_INFO.HOST,
                   dbName: DB_INFO.DB_NAME,
                   coll: "booked",
-                  method: "insertMany",
+                  method: "insertManyIfAbsent",
                   opt: { doc: saveDatas },
                 };
                 let data = await reqApi({

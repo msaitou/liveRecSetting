@@ -27,14 +27,11 @@ async function mOpe(params) {
     const collection = db.collection(coll);
     let rec;
     if (cond && cond._id) {
+      const toMongoId = (id) =>
+        typeof id === "string" && /^[a-f\d]{24}$/i.test(id) ? new ObjectId(id) : id;
       if (Array.isArray(cond._id)) {
-        cond._id = {
-          $in: cond._id.reduce((p, n) => {
-            p.push(new ObjectId(n));
-            return p;
-          }, []),
-        };
-      } else cond._id = new ObjectId(cond._id);
+        cond._id = { $in: cond._id.map(toMongoId) };
+      } else cond._id = toMongoId(cond._id);
     }
     switch (method) {
       case "find":
@@ -64,6 +61,24 @@ async function mOpe(params) {
         break;
       case "insertMany":
         rec = await collection.insertMany(opt.doc);
+        break;
+      case "insertManyIfAbsent":
+        rec = { insertedCount: 0 };
+        for (const doc of opt.doc) {
+          if (doc._id == null) throw new Error("insertManyIfAbsent requires every document to have an _id");
+          try {
+            const result = await collection.updateOne(
+              { _id: doc._id },
+              { $setOnInsert: doc },
+              { upsert: true }
+            );
+            rec.insertedCount += result.upsertedCount;
+          } catch (e) {
+            if (e.code !== 11000) throw e;
+            const existing = await collection.findOne({ _id: doc._id }, { projection: { _id: 1 } });
+            if (!existing) throw e;
+          }
+        }
         break;
       case "delete":
         rec = await collection.deleteMany(cond);
