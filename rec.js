@@ -354,7 +354,11 @@ async function mainLinux() {
             // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
             let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
             console.log("sleep前", new Date().toLocaleString(), sleepTime);
-            await updateRec(comApiData, candiLine._id, "中");
+            const claimed = await claimRec(comApiData, candiLine._id);
+            if (!claimed) {
+              console.log(`[録画] 他のプロセスが処理中のためスキップ: ${candiLine.title}`);
+              return;
+            }
             await sleep(sleepTime + cnt++ * 1000);
             console.log("sleep後", new Date().toLocaleString());
             const getJifunStr = (t1, t2) => {
@@ -401,15 +405,17 @@ async function mainLinux() {
             console.log(`[録画] 開始 ${new Date().toISOString()} title=${candiLine.title} pid=${child.pid} durationMs=${recTime}`);
             console.log(`[録画] Streamlink出力: ${inputPath}`);
             await sleep(recTime); // 終了時間までのミリ秒待機。
-            const PS_KILL_CMD = `${PS.LINUX.PS.KILL_CMD}${child.pid}`;
             // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
             const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${inputPath}" -vcodec copy -acodec copy "${outputPath}"`;
             try {
               console.log(`[録画] Streamlink停止 pid=${child.pid}`);
-              const stdout = execSync(PS_KILL_CMD);
-              // console.log(stdout.toString());
+              process.kill(child.pid, "SIGTERM");
             } catch (e) {
-              console.error(`[録画] Streamlink停止時のエラー: ${e.toString()}`);
+              if (e.code === "ESRCH") {
+                console.log(`[録画] Streamlinkはすでに終了しています pid=${child.pid}`);
+              } else {
+                console.error(`[録画] Streamlink停止時のエラー: ${e.toString()}`);
+              }
             }
             try {
               if (!fs.existsSync(inputPath)) {
@@ -562,4 +568,22 @@ async function updateRec(comApiData, id, status) {
     body: JSON.stringify(updateData),
   });
   console.log(JSON.stringify(data2));
+}
+
+async function claimRec(comApiData, id) {
+  const claimData = {
+    ...comApiData,
+    coll: "booked",
+    method: "claimRecording",
+    cond: { _id: id },
+  };
+  const result = await reqApi({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(claimData),
+  });
+  if (!result || result.err) {
+    throw new Error(`録画予約の確保に失敗しました: ${result ? result.err : "API応答なし"}`);
+  }
+  return result.rec && result.rec.modifiedCount === 1;
 }

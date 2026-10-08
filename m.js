@@ -47,6 +47,13 @@ async function mOpe(params) {
       case "findOne":
         rec = await collection.findOne(cond);
         break;
+      case "claimRecording":
+        if (!cond || !cond._id) throw new Error("claimRecording requires an _id");
+        rec = await collection.updateOne(
+          { _id: cond._id, status: null },
+          { $set: { status: "中" } }
+        );
+        break;
       case "update":
         let cnt = 0;
         if (cond && Object.keys(cond).length > 0) {
