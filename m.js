@@ -48,10 +48,53 @@ async function mOpe(params) {
         rec = await collection.findOne(cond);
         break;
       case "claimRecording":
-        if (!cond || !cond._id) throw new Error("claimRecording requires an _id");
+        if (!cond || !cond._id || !opt || !opt.token) {
+          throw new Error("claimRecording requires an _id and token");
+        }
+        const now = new Date();
         rec = await collection.updateOne(
-          { _id: cond._id, status: null },
-          { $set: { status: "中" } }
+          {
+            _id: cond._id,
+            $or: [
+              { status: null },
+              { status: "中", claimUntil: { $exists: false } },
+              { status: "中", claimUntil: { $lte: now } },
+            ],
+          },
+          {
+            $set: {
+              status: "中",
+              claimToken: opt.token,
+              claimUntil: new Date(now.getTime() + 5 * 60 * 1000),
+            },
+          }
+        );
+        break;
+      case "renewRecordingClaim":
+        if (!cond || !cond._id || !opt || !opt.token) {
+          throw new Error("renewRecordingClaim requires an _id and token");
+        }
+        rec = await collection.updateOne(
+          { _id: cond._id, status: "中", claimToken: opt.token },
+          { $set: { claimUntil: new Date(Date.now() + 5 * 60 * 1000) } }
+        );
+        break;
+      case "completeRecording":
+        if (!cond || !cond._id || !opt || !opt.token) {
+          throw new Error("completeRecording requires an _id and token");
+        }
+        rec = await collection.updateOne(
+          { _id: cond._id, status: "中", claimToken: opt.token },
+          { $set: { status: "済" }, $unset: { claimToken: "", claimUntil: "" } }
+        );
+        break;
+      case "releaseRecordingClaim":
+        if (!cond || !cond._id || !opt || !opt.token) {
+          throw new Error("releaseRecordingClaim requires an _id and token");
+        }
+        rec = await collection.updateOne(
+          { _id: cond._id, status: "中", claimToken: opt.token },
+          { $set: { status: null }, $unset: { claimToken: "", claimUntil: "" } }
         );
         break;
       case "update":
@@ -89,7 +132,9 @@ async function mOpe(params) {
         break;
       case "delete":
         rec = await collection.deleteMany(cond);
+        break;
       default:
+        throw new Error(`unsupported method: ${method}`);
     }
     dbInstance.close();
     return { rec };

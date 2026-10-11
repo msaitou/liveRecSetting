@@ -1,6 +1,6 @@
 // winかlinuxかでコマンドが変わるだけ
 const { execSync, spawn } = require("child_process");
-const { createHash } = require("crypto");
+const { createHash, randomBytes } = require("crypto");
 const { DB_INFO } = require("./config.js");
 const fs = require("fs");
 const IS_WIN = process.platform === "win32";
@@ -37,6 +37,7 @@ const reqApi = (params, query = "") => {
     });
 };
 const sleep = (waitTime) => new Promise((resolve) => setTimeout(resolve, waitTime));
+const CLAIM_LEASE_MS = 5 * 60 * 1000;
 const getRepeatId = (record) => {
   const identity = JSON.stringify([
     record.chanel,
@@ -323,7 +324,7 @@ async function mainLinux() {
         ...comApiData,
         coll: "booked",
         method: "find",
-        cond: { status: null },
+        cond: { status: { $in: [null, "中"] } },
       };
       // console.log(2);
       let data = await reqApi({
@@ -340,7 +341,13 @@ async function mainLinux() {
       now5.setMinutes(now5.getMinutes() + 5);
       if (data && data.length)
         candi = data.filter(
-          (d) => new Date(d.start_date) <= now5 || (new Date(d.start_date) < now && new Date(d.end_date) > now)
+          (d) => {
+            const startTime = new Date(d.start_date).getTime();
+            const endTime = new Date(d.end_date).getTime();
+            const claimExpired =
+              d.status !== "中" || !d.claimUntil || new Date(d.claimUntil).getTime() <= now.getTime();
+            return startTime <= now5.getTime() && endTime > now.getTime() && claimExpired;
+          }
         );
       if (candi.length) {
         console.log(4);
@@ -350,16 +357,50 @@ async function mainLinux() {
         // 複数ある想定
         candi.reduce(async (a, candiLine, index) => {
           console.log(5);
+          let claimToken = null;
+          let claimTimer = null;
+          let child;
+          let claimLost = false;
           try {
             // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
             let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
-            console.log("sleep前", new Date().toLocaleString(), sleepTime);
-            const claimed = await claimRec(comApiData, candiLine._id);
+            console.log(`[録画] 開始待機 ${Math.max(0, sleepTime)}ms ${new Date().toLocaleString()}`);
+            claimToken = randomBytes(16).toString("hex");
+            const claimed = await claimRec(comApiData, candiLine._id, claimToken);
             if (!claimed) {
-              console.log(`[録画] 他のプロセスが処理中のためスキップ: ${candiLine.title}`);
+              claimToken = null;
+              console.log(`[録画] 予約を確保できなかったためスキップ: ${candiLine.title}`);
               return;
             }
-            await sleep(sleepTime + cnt++ * 1000);
+            claimTimer = setInterval(async () => {
+              try {
+                const renewed = await renewRec(comApiData, candiLine._id, claimToken);
+                if (!renewed) {
+                  claimLost = true;
+                  console.error(`[録画] 予約ロックを失いました: ${candiLine.title}`);
+                  if (child && child.pid) {
+                    try {
+                      process.kill(child.pid, "SIGTERM");
+                    } catch (e) {
+                      if (e.code !== "ESRCH") console.error(`[録画] Streamlink停止エラー: ${e.toString()}`);
+                    }
+                  }
+                }
+              } catch (e) {
+                claimLost = true;
+                console.error(`[録画] 予約ロック更新エラー: ${e.toString()}`);
+                if (child && child.pid) {
+                  try {
+                    process.kill(child.pid, "SIGTERM");
+                  } catch (killError) {
+                    if (killError.code !== "ESRCH") {
+                      console.error(`[録画] Streamlink停止エラー: ${killError.toString()}`);
+                    }
+                  }
+                }
+              }
+            }, 60 * 1000);
+            await sleep(Math.max(0, sleepTime) + cnt++ * 1000);
             console.log("sleep後", new Date().toLocaleString());
             const getJifunStr = (t1, t2) => {
               let diff = t1.getTime() - t2.getTime();
@@ -386,7 +427,7 @@ async function mainLinux() {
             // streamlink -p "C:\Program Files (x86)\GRETECH\GomPlayer\GOM.exe" https://abema.tv/now-on-air/mahjong 360p -o .\test2.mp4
             // console.log(6);
             // 起動(非同期)
-            let child = spawn(PS.LINUX.PS.NAME, cmds, {
+            child = spawn(PS.LINUX.PS.NAME, cmds, {
               stdio: ["ignore", "inherit", "inherit"],
                 // 標準入力・標準出力・標準エラー
                 // "ignore"：子プロセスの標準入力を使わない
@@ -397,14 +438,13 @@ async function mainLinux() {
             child.unref(); // メインプロセスから切り離す
 
             // このプロセスIDを取得。これをkillすることで録画終了
-            let recTime = new Date(candiLine.end_date).getTime() - new Date(candiLine.start_date).getTime();
-            // 開始時間から遅れて始める場合は、今から終了時間までの時間にする必要あり
-            if (new Date(candiLine.start_date) < now) recTime = new Date(candiLine.end_date).getTime() - now.getTime();
+            let recTime = new Date(candiLine.end_date).getTime() - Date.now();
             const inputPath = `${DB_INFO.REC.DIR}${candiLine.title}.ts`;
             const outputPath = `${DB_INFO.REC.OUTPUT}${candiLine.title}.mp4`;
             console.log(`[録画] 開始 ${new Date().toISOString()} title=${candiLine.title} pid=${child.pid} durationMs=${recTime}`);
             console.log(`[録画] Streamlink出力: ${inputPath}`);
             await sleep(recTime); // 終了時間までのミリ秒待機。
+            if (claimLost) throw new Error(`予約ロックを失ったため録画後処理を中止します: ${candiLine.title}`);
             // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
             const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${inputPath}" -vcodec copy -acodec copy "${outputPath}"`;
             try {
@@ -424,7 +464,14 @@ async function mainLinux() {
               const inputStat = fs.statSync(inputPath);
               console.log(`[録画] FFmpeg変換開始 inputBytes=${inputStat.size} output=${outputPath}`);
               console.log(`[録画] FFmpegコマンド: ${PS_CMD_FFMPEG}`);
-              execSync(PS_CMD_FFMPEG, { stdio: "inherit" });
+              await new Promise((resolve, reject) => {
+                const ffmpeg = spawn("sh", ["-c", PS_CMD_FFMPEG], { stdio: "inherit" });
+                ffmpeg.once("error", reject);
+                ffmpeg.once("close", (code, signal) => {
+                  if (code === 0) resolve();
+                  else reject(new Error(`FFmpeg終了 code=${code} signal=${signal}`));
+                });
+              });
               if (!fs.existsSync(outputPath)) {
                 throw new Error(`変換後のMP4がありません: ${outputPath}`);
               }
@@ -437,10 +484,16 @@ async function mainLinux() {
               console.error(`[録画] FFmpeg変換失敗: ${e.toString()}`);
               throw e;
             }
+            if (claimLost) throw new Error(`予約ロックを失ったため録画後処理を中止します: ${candiLine.title}`);
             console.log(`[録画] MP4作成確認済み ${new Date().toISOString()}`);
+            if (claimTimer) {
+              clearInterval(claimTimer);
+              claimTimer = null;
+            }
+            await completeRec(comApiData, candiLine._id, claimToken);
+            claimToken = null;
             fs.unlinkSync(inputPath);
             console.log(`[録画] 元TSを削除しました: ${inputPath}`);
-            await updateRec(comApiData, candiLine._id, "済");
 
             let delRec = data.filter(
               (d) => new Date(d.start_date).getTime() < new Date().getTime() - 24 * 60 * 60 * 1000
@@ -466,6 +519,15 @@ async function mainLinux() {
             }
           } catch (e) {
             console.log(e);
+          } finally {
+            if (claimTimer) clearInterval(claimTimer);
+            if (claimToken) {
+              try {
+                await releaseRec(comApiData, candiLine._id, claimToken);
+              } catch (e) {
+                console.error(`[録画] 予約ロック解放エラー: ${e.toString()}`);
+              }
+            }
           }
           try {
             // console.log(data);
@@ -570,12 +632,13 @@ async function updateRec(comApiData, id, status) {
   console.log(JSON.stringify(data2));
 }
 
-async function claimRec(comApiData, id) {
+async function recordingClaimRequest(comApiData, id, method, token) {
   const claimData = {
     ...comApiData,
     coll: "booked",
-    method: "claimRecording",
+    method,
     cond: { _id: id },
+    opt: { token },
   };
   const result = await reqApi({
     method: "POST",
@@ -583,7 +646,31 @@ async function claimRec(comApiData, id) {
     body: JSON.stringify(claimData),
   });
   if (!result || result.err) {
-    throw new Error(`録画予約の確保に失敗しました: ${result ? result.err : "API応答なし"}`);
+    throw new Error(`録画予約ロック処理に失敗しました: ${result ? result.err : "API応答なし"}`);
   }
-  return result.rec && result.rec.modifiedCount === 1;
+  return result.rec;
+}
+
+async function claimRec(comApiData, id, token) {
+  const result = await recordingClaimRequest(comApiData, id, "claimRecording", token);
+  return result && result.modifiedCount === 1;
+}
+
+async function renewRec(comApiData, id, token) {
+  const result = await recordingClaimRequest(comApiData, id, "renewRecordingClaim", token);
+  return result && result.modifiedCount === 1;
+}
+
+async function completeRec(comApiData, id, token) {
+  const result = await recordingClaimRequest(comApiData, id, "completeRecording", token);
+  if (!result || result.modifiedCount !== 1) {
+    throw new Error("予約ロックを確認できず、録画完了状態に更新できませんでした");
+  }
+}
+
+async function releaseRec(comApiData, id, token) {
+  const result = await recordingClaimRequest(comApiData, id, "releaseRecordingClaim", token);
+  if (!result || result.modifiedCount !== 1) {
+    console.error("予約ロックを解放できませんでした。期限切れ後に再取得されます");
+  }
 }
