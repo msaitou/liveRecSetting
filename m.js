@@ -6,6 +6,7 @@
  */
 
 const { MongoClient, ObjectId } = require("mongodb");
+const RECORDING_CLAIM_LEASE_MS = 90 * 1000;
 const m = async (req, res) => {
   console.log("m desu");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -65,7 +66,7 @@ async function mOpe(params) {
             $set: {
               status: "中",
               claimToken: opt.token,
-              claimUntil: new Date(now.getTime() + 5 * 60 * 1000),
+              claimUntil: new Date(now.getTime() + RECORDING_CLAIM_LEASE_MS),
             },
           }
         );
@@ -76,7 +77,7 @@ async function mOpe(params) {
         }
         rec = await collection.updateOne(
           { _id: cond._id, status: "中", claimToken: opt.token },
-          { $set: { claimUntil: new Date(Date.now() + 5 * 60 * 1000) } }
+          { $set: { claimUntil: new Date(Date.now() + RECORDING_CLAIM_LEASE_MS) } }
         );
         break;
       case "completeRecording":

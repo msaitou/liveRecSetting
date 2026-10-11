@@ -37,7 +37,7 @@ const reqApi = (params, query = "") => {
     });
 };
 const sleep = (waitTime) => new Promise((resolve) => setTimeout(resolve, waitTime));
-const CLAIM_LEASE_MS = 5 * 60 * 1000;
+const CLAIM_LEASE_MS = 90 * 1000;
 const getRepeatId = (record) => {
   const identity = JSON.stringify([
     record.chanel,
@@ -132,9 +132,7 @@ async function mainWin() {
         console.log("sleep後", new Date().toLocaleString());
         const getJifunStr = (t1, t2) => {
           let diff = t1.getTime() - t2.getTime();
-          //HH部分取得
           let diffHour = diff / (1000 * 60 * 60);
-          //MM部分取得
           let diffMinute = (diffHour - Math.floor(diffHour)) * 60;
           return `${Math.floor(diffHour).toString().padStart(2, "0")}:${Math.floor(diffMinute)
             .toString()
@@ -369,7 +367,8 @@ async function mainLinux() {
             const claimed = await claimRec(comApiData, candiLine._id, claimToken);
             if (!claimed) {
               claimToken = null;
-              console.log(`[録画] 予約を確保できなかったためスキップ: ${candiLine.title}`);
+              const claimUntil = candiLine.claimUntil ? new Date(candiLine.claimUntil).toISOString() : "不明";
+              console.log(`[録画] 予約を確保できません。ロック期限=${claimUntil} 次回確認まで待機: ${candiLine.title}`);
               return;
             }
             claimTimer = setInterval(async () => {
@@ -399,20 +398,26 @@ async function mainLinux() {
                   }
                 }
               }
-            }, 60 * 1000);
+            }, CLAIM_LEASE_MS / 3);
             await sleep(Math.max(0, sleepTime) + cnt++ * 1000);
             console.log("sleep後", new Date().toLocaleString());
+            const recordingStart = Math.max(Date.now(), new Date(candiLine.start_date).getTime());
+            const remainingMs = new Date(candiLine.end_date).getTime() - recordingStart;
+            if (remainingMs <= 0) {
+              console.log(`[録画] 終了時刻を過ぎたため開始しません: ${candiLine.title}`);
+              return;
+            }
             const getJifunStr = (t1, t2) => {
-              let diff = t1.getTime() - t2.getTime();
-              //HH部分取得
-              let diffHour = diff / (1000 * 60 * 60);
-              //MM部分取得
-              let diffMinute = (diffHour - Math.floor(diffHour)) * 60;
-              return `${Math.floor(diffHour).toString().padStart(2, "0")}:${Math.floor(diffMinute)
+              let seconds = Math.ceil((t1.getTime() - t2.getTime()) / 1000);
+              const hours = Math.floor(seconds / 3600);
+              seconds %= 3600;
+              const minutes = Math.floor(seconds / 60);
+              seconds %= 60;
+              return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds
                 .toString()
-                .padStart(2, "0")}:00`;
+                .padStart(2, "0")}`;
             };
-            let jifunStr = getJifunStr(new Date(candiLine.end_date), new Date(candiLine.start_date));
+            let jifunStr = getJifunStr(new Date(candiLine.end_date), new Date(recordingStart));
 
             let cmds = [
               `-p`,
@@ -604,7 +609,7 @@ async function mainLinux() {
   };
   const monitoringWithTimeout = async () => {
     await monitoring();
-    setTimeout(monitoringWithTimeout, 1 * 1000 * 60); // 5分毎にチェック
+    setTimeout(monitoringWithTimeout, 30 * 1000);
   };
   monitoringWithTimeout(); // 関数を呼び出して開始
   // await monitoring();
