@@ -363,10 +363,9 @@ async function mainLinux() {
             // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
             let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
             console.log(`[録画] 開始待機 ${Math.max(0, sleepTime)}ms ${new Date().toLocaleString()}`);
-            claimToken = randomBytes(16).toString("hex");
-            const claimResult = await claimRec(comApiData, candiLine._id, claimToken);
+            const requestedClaimToken = randomBytes(16).toString("hex");
+            const claimResult = await claimRec(comApiData, candiLine._id, requestedClaimToken);
             if (!claimResult.claimed) {
-              claimToken = null;
               const claimUntil = claimResult.currentClaimUntil
                 ? new Date(claimResult.currentClaimUntil).toISOString()
                 : "なし";
@@ -376,6 +375,7 @@ async function mainLinux() {
               );
               return;
             }
+            claimToken = requestedClaimToken;
             claimTimer = setInterval(async () => {
               try {
                 const renewed = await renewRec(comApiData, candiLine._id, claimToken);
@@ -664,7 +664,10 @@ async function recordingClaimRequest(comApiData, id, method, token) {
 async function claimRec(comApiData, id, token) {
   const result = await recordingClaimRequest(comApiData, id, "claimRecording", token);
   if (!result || typeof result.claimed !== "boolean") {
-    throw new Error("claimRecordingの応答形式が不正です。API側のm.jsを更新してデプロイしてください");
+    throw new Error(
+      `claimRecordingの応答形式が不正です (${JSON.stringify(result)}). ` +
+        "API側のm.jsを更新してデプロイしてください"
+    );
   }
   return result;
 }
