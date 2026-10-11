@@ -70,6 +70,20 @@ async function mOpe(params) {
             },
           }
         );
+        if (rec.modifiedCount !== 1) {
+          const current = await collection.findOne(
+            { _id: cond._id },
+            { projection: { status: 1, claimUntil: 1 } }
+          );
+          rec = {
+            ...rec,
+            claimed: false,
+            currentStatus: current ? current.status : null,
+            currentClaimUntil: current ? current.claimUntil : null,
+          };
+        } else {
+          rec.claimed = true;
+        }
         break;
       case "renewRecordingClaim":
         if (!cond || !cond._id || !opt || !opt.token) {

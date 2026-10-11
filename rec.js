@@ -364,11 +364,16 @@ async function mainLinux() {
             let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
             console.log(`[録画] 開始待機 ${Math.max(0, sleepTime)}ms ${new Date().toLocaleString()}`);
             claimToken = randomBytes(16).toString("hex");
-            const claimed = await claimRec(comApiData, candiLine._id, claimToken);
-            if (!claimed) {
+            const claimResult = await claimRec(comApiData, candiLine._id, claimToken);
+            if (!claimResult.claimed) {
               claimToken = null;
-              const claimUntil = candiLine.claimUntil ? new Date(candiLine.claimUntil).toISOString() : "不明";
-              console.log(`[録画] 予約を確保できません。ロック期限=${claimUntil} 次回確認まで待機: ${candiLine.title}`);
+              const claimUntil = claimResult.currentClaimUntil
+                ? new Date(claimResult.currentClaimUntil).toISOString()
+                : "なし";
+              console.log(
+                `[録画] 予約を確保できません status=${claimResult.currentStatus ?? "なし"} ` +
+                  `lockUntil=${claimUntil} title=${candiLine.title}`
+              );
               return;
             }
             claimTimer = setInterval(async () => {
@@ -658,7 +663,10 @@ async function recordingClaimRequest(comApiData, id, method, token) {
 
 async function claimRec(comApiData, id, token) {
   const result = await recordingClaimRequest(comApiData, id, "claimRecording", token);
-  return result && result.modifiedCount === 1;
+  if (!result || typeof result.claimed !== "boolean") {
+    throw new Error("claimRecordingの応答形式が不正です。API側のm.jsを更新してデプロイしてください");
+  }
+  return result;
 }
 
 async function renewRec(comApiData, id, token) {
