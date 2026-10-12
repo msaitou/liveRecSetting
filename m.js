@@ -6,7 +6,7 @@
  */
 
 const { MongoClient, ObjectId } = require("mongodb");
-const RECORDING_CLAIM_LEASE_MS = 90 * 1000;
+const RECORDING_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const m = async (req, res) => {
   console.log("m desu");
   res.setHeader("Access-Control-Allow-Origin", "*");

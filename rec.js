@@ -29,7 +29,7 @@ const url = "https://asia-northeast1-abema-383005.cloudfunctions.net/mongo-wrapp
 
 const reqApi = (params, query = "") => {
   // return fetch(`${url}${query}`, params)
-  return fetch(`${url}${query}`, {...params, timeout: 60000})
+  return fetch(`${url}${query}`, { ...params, signal: AbortSignal.timeout(60 * 1000) })
     .then((res) => res.json())
     .catch((err) => {
       console.log(err);
@@ -37,7 +37,8 @@ const reqApi = (params, query = "") => {
     });
 };
 const sleep = (waitTime) => new Promise((resolve) => setTimeout(resolve, waitTime));
-const CLAIM_LEASE_MS = 90 * 1000;
+const CLAIM_LEASE_MS = 5 * 60 * 1000;
+const CLAIM_RENEW_INTERVAL_MS = 60 * 1000;
 const getRepeatId = (record) => {
   const identity = JSON.stringify([
     record.chanel,
@@ -359,6 +360,8 @@ async function mainLinux() {
           let claimTimer = null;
           let child;
           let claimLost = false;
+          let claimRenewalInProgress = false;
+          let claimRenewalFailed = false;
           try {
             // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
             let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
@@ -377,10 +380,13 @@ async function mainLinux() {
             }
             claimToken = requestedClaimToken;
             claimTimer = setInterval(async () => {
+              if (claimRenewalInProgress || claimLost) return;
+              claimRenewalInProgress = true;
               try {
                 const renewed = await renewRec(comApiData, candiLine._id, claimToken);
                 if (!renewed) {
                   claimLost = true;
+                  clearInterval(claimTimer);
                   console.error(`[録画] 予約ロックを失いました: ${candiLine.title}`);
                   if (child && child.pid) {
                     try {
@@ -389,21 +395,21 @@ async function mainLinux() {
                       if (e.code !== "ESRCH") console.error(`[録画] Streamlink停止エラー: ${e.toString()}`);
                     }
                   }
+                } else if (claimRenewalFailed) {
+                  claimRenewalFailed = false;
+                  console.log(`[録画] 予約ロック更新が復旧しました: ${candiLine.title}`);
                 }
               } catch (e) {
-                claimLost = true;
-                console.error(`[録画] 予約ロック更新エラー: ${e.toString()}`);
-                if (child && child.pid) {
-                  try {
-                    process.kill(child.pid, "SIGTERM");
-                  } catch (killError) {
-                    if (killError.code !== "ESRCH") {
-                      console.error(`[録画] Streamlink停止エラー: ${killError.toString()}`);
-                    }
-                  }
+                if (!claimRenewalFailed) {
+                  console.error(
+                    `[録画] 予約ロック更新に一時失敗しました。録画は継続し、次回再試行します: ${e.toString()}`
+                  );
+                  claimRenewalFailed = true;
                 }
+              } finally {
+                claimRenewalInProgress = false;
               }
-            }, CLAIM_LEASE_MS / 3);
+            }, CLAIM_RENEW_INTERVAL_MS);
             await sleep(Math.max(0, sleepTime) + cnt++ * 1000);
             console.log("sleep後", new Date().toLocaleString());
             const recordingStart = Math.max(Date.now(), new Date(candiLine.start_date).getTime());
