@@ -546,7 +546,11 @@ async function mainLinux() {
               `[録画] Streamlink起動要求 ${new Date(streamlinkRequestedAt).toISOString()} ` +
                 `予定開始=${new Date(scheduledStart).toISOString()} title=${candiLine.title}`
             );
-            child = spawn(PS.LINUX.PS.NAME, cmds, {
+            const streamlinkCommand = IS_TERMUX ? "python3" : PS.LINUX.PS.NAME;
+            const streamlinkArgs = IS_TERMUX
+              ? [`${__dirname}/streamlink_http_trace.py`, ...cmds]
+              : cmds;
+            child = spawn(streamlinkCommand, streamlinkArgs, {
               stdio: ["ignore", "pipe", "pipe"],
               detached: true, // メインプロセスから切り離す設定
               env: process.env, // NODE_ENV を tick.js へ与えるため
