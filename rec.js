@@ -45,6 +45,19 @@ const reqApi = (params, query = "") => {
 const sleep = (waitTime) => new Promise((resolve) => setTimeout(resolve, waitTime));
 const CLAIM_LEASE_MS = 5 * 60 * 1000;
 const CLAIM_RENEW_INTERVAL_MS = 60 * 1000;
+const RECORDING_PREROLL_MS = 4 * 60 * 1000;
+const STREAMLINK_LOG_MILESTONES = [
+  [/\[plugins\.abematv\].*\bURL=/i, "abema-playlist-url"],
+  [/\[cli\]\[info\] Found matching plugin/i, "plugin-matched"],
+  [/\[cli\]\[info\] Available streams:/i, "streams-available"],
+  [/\[cli\]\[info\] Opening stream:/i, "stream-opening"],
+  [/\[cli\]\[info\] Writing output to/i, "output-opening"],
+  [/Filtering out segments and pausing stream output/i, "output-paused-filtering"],
+  [/Resuming stream output/i, "output-resumed"],
+  [/Writing stream to output/i, "first-stream-write"],
+  [/\b(?:GET|POST|PUT|HEAD)\s+https?:\/\//i, "http-request"],
+  [/\bHTTP\/\d(?:\.\d)?\s+[1-5]\d\d\b|\bresponse\b.*\bstatus\b/i, "http-response"],
+];
 const getRepeatId = (record) => {
   const identity = JSON.stringify([
     record.chanel,
@@ -427,11 +440,12 @@ async function mainLinux() {
           };
           try {
             const scheduledStart = new Date(candiLine.start_date).getTime();
-            const plannedCaptureStart = scheduledStart;
-            let sleepTime = scheduledStart - Date.now();
+            const plannedCaptureStart = scheduledStart - RECORDING_PREROLL_MS;
+            let sleepTime = plannedCaptureStart - Date.now();
             console.log(
               `[録画] 開始待機 ${Math.max(0, sleepTime)}ms ` +
-                `予定開始=${new Date(scheduledStart).toISOString()} ${new Date().toLocaleString()}`
+                `予定開始=${new Date(scheduledStart).toISOString()} ` +
+                `前倒し=${RECORDING_PREROLL_MS / 1000}秒 ${new Date().toLocaleString()}`
             );
             const requestedClaimToken = randomBytes(16).toString("hex");
             const claimResult = await claimRec(comApiData, candiLine._id, requestedClaimToken);
@@ -514,7 +528,7 @@ async function mainLinux() {
 
             let cmds = [
               `--loglevel`,
-              `debug`,
+              `trace`,
               `-p`,
               DB_INFO.REC.PLAYER,
               `https://abema.tv/now-on-air/${candiLine.chanel}`,
@@ -552,11 +566,20 @@ async function mainLinux() {
                 }
                 const safeLine = line
                   .replace(/(authorization|cookie):.*$/gi, "$1: [REDACTED]")
+                  .replace(/([?&][^=&#\s]+=)[^&#\s]*/g, "$1[REDACTED]")
                   .replace(
-                    /([?&](?:access[_-]?token|auth(?:orization)?|token|api[_-]?key|key|signature|sig|session[_-]?id|hdnea|jwt|client[_-]?secret)=)[^&#\s]*/gi,
+                    /(["']?(?:authorization|cookie|access[_-]?token|user[_-]?token|auth(?:orization)?|token|api[_-]?key|key|secret|applicationkeysecret|signature|sig|session[_-]?id|hdnea|jwt|device[_-]?id|ticket|license)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^,\s;&}]+)/gi,
                     "$1[REDACTED]"
                   );
                 console.log(`[録画][Streamlink][${label}] ${new Date(now).toISOString()} ${safeLine}`);
+                for (const [pattern, phase] of STREAMLINK_LOG_MILESTONES) {
+                  if (pattern.test(line)) {
+                    console.log(
+                      `[録画] Streamlink段階=${phase} ${new Date(now).toISOString()} ` +
+                        `起動要求から=${now - streamlinkRequestedAt}ms`
+                    );
+                  }
+                }
               });
             };
             logStreamlinkOutput(child.stdout, "stdout");
