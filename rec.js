@@ -6,6 +6,7 @@ const fs = require("fs");
 const IS_WIN = process.platform === "win32";
 const IS_LINUX = process.platform === "linux";
 const IS_ANDROID = process.platform === "android";
+const IS_TERMUX = IS_LINUX && typeof process.env.PREFIX === "string" && process.env.PREFIX.indexOf("/com.termux/") !== -1;
 const PS = {
   WIN: {
     PS: {
@@ -313,6 +314,21 @@ async function mainWin() {
   // await setInterval(monitoring, 20 * 1000); // 6分毎にチェックでエンドレス
 }
 async function mainLinux() {
+  if (IS_TERMUX) {
+    try {
+      execSync("termux-wake-lock", { stdio: "ignore" });
+      console.log("[録画] Termux Wake Lockを取得しました");
+      process.once("exit", () => {
+        try {
+          execSync("termux-wake-unlock", { stdio: "ignore" });
+        } catch (e) {
+          console.error(`[録画] Termux Wake Lock解放エラー: ${e.toString()}`);
+        }
+      });
+    } catch (e) {
+      console.error(`[録画] Termux Wake Lock取得エラー。端末スリープ中は予約時刻どおりに動作しない可能性があります: ${e.toString()}`);
+    }
+  }
   let count = 0;
   const PS_CHECK_CMD = `${PS.LINUX.PS.CHECK_CMD}${PS.LINUX.PS.NAME}`;
   const monitoring = async () => {
@@ -367,25 +383,38 @@ async function mainLinux() {
             resolveClaimLost = resolve;
           });
           let childClosePromise = null;
-          const stopChild = async () => {
-            if (!child || !child.pid || child.exitCode !== null || child.signalCode !== null) return;
+          let childClosed = false;
+          let stoppingChildPromise = null;
+          const signalChild = (signal) => {
+            if (!child || !child.pid) return;
             try {
-              process.kill(child.pid, "SIGTERM");
+              process.kill(-child.pid, signal);
             } catch (e) {
-              if (e.code === "ESRCH") return;
-              throw e;
-            }
-            if (childClosePromise) {
-              await Promise.race([childClosePromise, sleep(5000)]);
-              if (child.exitCode === null && child.signalCode === null) {
-                try {
-                  process.kill(child.pid, "SIGKILL");
-                } catch (e) {
-                  if (e.code !== "ESRCH") throw e;
-                }
-                await childClosePromise;
+              if (e.code !== "ESRCH") throw e;
+              try {
+                process.kill(child.pid, signal);
+              } catch (childError) {
+                if (childError.code !== "ESRCH") throw childError;
               }
             }
+          };
+          const waitForChildClose = async (timeoutMs) =>
+            Promise.race([childClosePromise.then(() => true), sleep(timeoutMs).then(() => false)]);
+          const stopChild = () => {
+            if (stoppingChildPromise) return stoppingChildPromise;
+            stoppingChildPromise = (async () => {
+              if (!child || !child.pid || !childClosePromise || childClosed) return;
+              console.log(`[録画] Streamlink停止シグナル送信 signal=SIGTERM pid=${child.pid}`);
+              signalChild("SIGTERM");
+              if (await waitForChildClose(5000)) return;
+              console.error(`[録画] Streamlinkが5秒以内に停止しないため強制終了します pid=${child.pid}`);
+              signalChild("SIGKILL");
+              if (!(await waitForChildClose(5000))) {
+                throw new Error(`Streamlink終了を確認できません pid=${child.pid}`);
+              }
+              console.log(`[録画] Streamlink強制終了を確認しました pid=${child.pid}`);
+            })();
+            return stoppingChildPromise;
           };
           try {
             // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
@@ -484,8 +513,14 @@ async function mainLinux() {
               env: process.env, // NODE_ENV を tick.js へ与えるため
             });
             childClosePromise = new Promise((resolve) => {
-              child.once("error", (error) => resolve({ error }));
-              child.once("close", (code, signal) => resolve({ code, signal }));
+              child.once("error", (error) => {
+                childClosed = true;
+                resolve({ error });
+              });
+              child.once("close", (code, signal) => {
+                childClosed = true;
+                resolve({ code, signal });
+              });
             });
             child.unref(); // メインプロセスから切り離す
 
@@ -495,13 +530,34 @@ async function mainLinux() {
             console.log(`[録画] 開始 ${new Date().toISOString()} title=${candiLine.title} pid=${child.pid} durationMs=${recTime}`);
             console.log(`[録画] Streamlink出力: ${inputPath}`);
             const recordingDeadline = Date.now() + Math.max(0, recTime);
+            let resolveRecordingDeadline;
+            let recordingDeadlineReached = false;
+            const recordingDeadlineSignal = new Promise((resolve) => {
+              resolveRecordingDeadline = resolve;
+            });
+            const recordingDeadlineTimer = setTimeout(async () => {
+              recordingDeadlineReached = true;
+              console.log(`[録画] 予約終了時刻に達しました。Streamlinkを停止します: ${candiLine.title}`);
+              try {
+                await stopChild();
+                resolveRecordingDeadline({ kind: "deadline" });
+              } catch (e) {
+                resolveRecordingDeadline({ kind: "stop-error", error: e });
+              }
+            }, Math.max(0, recordingDeadline - Date.now()));
             const recordingResult = await Promise.race([
-              sleep(recTime).then(() => ({ kind: "deadline" })),
+              recordingDeadlineSignal,
               claimLostSignal.then(() => ({ kind: "claim-lost" })),
-              childClosePromise.then((result) => ({ kind: "child-exit", result })),
+              childClosePromise.then((result) =>
+                recordingDeadlineReached ? recordingDeadlineSignal : { kind: "child-exit", result }
+              ),
             ]);
+            clearTimeout(recordingDeadlineTimer);
             if (recordingResult.kind === "claim-lost" || claimLost) {
               throw new Error(`予約ロックを失ったため録画後処理を中止します: ${candiLine.title}`);
+            }
+            if (recordingResult.kind === "stop-error") {
+              throw recordingResult.error;
             }
             if (
               recordingResult.kind === "child-exit" &&
@@ -509,6 +565,12 @@ async function mainLinux() {
             ) {
               throw new Error(
                 `Streamlinkが異常終了しました: ${recordingResult.result.error || `code=${recordingResult.result.code} signal=${recordingResult.result.signal}`}`
+              );
+            }
+            if (recordingResult.kind === "child-exit") {
+              console.log(
+                `[録画] Streamlink自然終了 code=${recordingResult.result.code} signal=${recordingResult.result.signal} ` +
+                  `elapsedMs=${Date.now() - (recordingDeadline - Math.max(0, recTime))}`
               );
             }
             if (
@@ -522,8 +584,10 @@ async function mainLinux() {
             // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
             const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${inputPath}" -vcodec copy -acodec copy "${outputPath}"`;
             try {
-              console.log(`[録画] Streamlink停止 pid=${child.pid}`);
-              await stopChild();
+              if (recordingResult.kind !== "deadline") {
+                console.log(`[録画] Streamlink停止 pid=${child.pid}`);
+                await stopChild();
+              }
             } catch (e) {
               console.error(`[録画] Streamlink停止時のエラー: ${e.toString()}`);
               throw e;
