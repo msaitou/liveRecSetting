@@ -56,7 +56,8 @@ const STREAMLINK_LOG_MILESTONES = [
   [/Resuming stream output/i, "output-resumed"],
   [/Writing stream to output/i, "first-stream-write"],
   [/\b(?:GET|POST|PUT|HEAD)\s+https?:\/\//i, "http-request"],
-  [/\bHTTP\/\d(?:\.\d)?\s+[1-5]\d\d\b|\bresponse\b.*\bstatus\b/i, "http-response"],
+  [/\[HTTP診断\].*\bevent=request-complete\b/i, "http-request-complete"],
+  [/\[HTTP診断\].*\bevent=request-error\b/i, "http-request-error"],
 ];
 const getRepeatId = (record) => {
   const identity = JSON.stringify([
