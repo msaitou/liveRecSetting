@@ -1,6 +1,7 @@
 // winかlinuxかでコマンドが変わるだけ
 const { execSync, spawn } = require("child_process");
 const { createHash, randomBytes } = require("crypto");
+const { createInterface } = require("readline");
 const { DB_INFO } = require("./config.js");
 const fs = require("fs");
 const IS_WIN = process.platform === "win32";
@@ -425,9 +426,13 @@ async function mainLinux() {
             return stoppingChildPromise;
           };
           try {
-            // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
-            let sleepTime = new Date(candiLine.start_date).getTime() - Date.now();
-            console.log(`[録画] 開始待機 ${Math.max(0, sleepTime)}ms ${new Date().toLocaleString()}`);
+            const scheduledStart = new Date(candiLine.start_date).getTime();
+            const plannedCaptureStart = scheduledStart;
+            let sleepTime = scheduledStart - Date.now();
+            console.log(
+              `[録画] 開始待機 ${Math.max(0, sleepTime)}ms ` +
+                `予定開始=${new Date(scheduledStart).toISOString()} ${new Date().toLocaleString()}`
+            );
             const requestedClaimToken = randomBytes(16).toString("hex");
             const claimResult = await claimRec(comApiData, candiLine._id, requestedClaimToken);
             if (!claimResult.claimed) {
@@ -484,8 +489,11 @@ async function mainLinux() {
             if (startWaitResult === "claim-lost" || claimLost) {
               throw new Error(`予約ロックを失ったため録画を開始しません: ${candiLine.title}`);
             }
-            console.log("sleep後", new Date().toLocaleString());
-            const recordingStart = Math.max(Date.now(), new Date(candiLine.start_date).getTime());
+            const recordingStart = Math.max(Date.now(), plannedCaptureStart);
+            console.log(
+              `[録画] キャプチャ開始時刻 ${new Date(recordingStart).toISOString()} ` +
+                `(予約開始 ${new Date(scheduledStart).toISOString()})`
+            );
             const remainingMs = new Date(candiLine.end_date).getTime() - recordingStart;
             if (remainingMs <= 0) {
               console.log(`[録画] 終了時刻を過ぎたため開始しません: ${candiLine.title}`);
@@ -505,6 +513,8 @@ async function mainLinux() {
             const inputPath = `${DB_INFO.REC.DIR}${candiLine.title}.${claimToken}.ts`;
 
             let cmds = [
+              `--loglevel`,
+              `debug`,
               `-p`,
               DB_INFO.REC.PLAYER,
               `https://abema.tv/now-on-air/${candiLine.chanel}`,
@@ -517,13 +527,45 @@ async function mainLinux() {
             // streamlink -p "C:\Program Files (x86)\GRETECH\GomPlayer\GOM.exe" https://abema.tv/now-on-air/mahjong 360p -o .\test2.mp4
             // console.log(6);
             // 起動(非同期)
+            const streamlinkRequestedAt = Date.now();
+            console.log(
+              `[録画] Streamlink起動要求 ${new Date(streamlinkRequestedAt).toISOString()} ` +
+                `予定開始=${new Date(scheduledStart).toISOString()} title=${candiLine.title}`
+            );
             child = spawn(PS.LINUX.PS.NAME, cmds, {
-              stdio: ["ignore", "inherit", "inherit"],
-                // 標準入力・標準出力・標準エラー
-                // "ignore"：子プロセスの標準入力を使わない
-                // "inherit"：子プロセスの標準出力を、親プロセスと同じ出力先に流す
+              stdio: ["ignore", "pipe", "pipe"],
               detached: true, // メインプロセスから切り離す設定
               env: process.env, // NODE_ENV を tick.js へ与えるため
+            });
+            let streamlinkFirstOutputAt = null;
+            const logStreamlinkOutput = (stream, label) => {
+              stream.setEncoding("utf8");
+              const lines = createInterface({ input: stream, crlfDelay: Infinity });
+              lines.on("line", (line) => {
+                const now = Date.now();
+                if (streamlinkFirstOutputAt === null) {
+                  streamlinkFirstOutputAt = now;
+                  console.log(
+                    `[録画] Streamlink初回ログ ${new Date(now).toISOString()} ` +
+                      `起動要求から=${now - streamlinkRequestedAt}ms`
+                  );
+                }
+                const safeLine = line
+                  .replace(/(authorization|cookie):.*$/gi, "$1: [REDACTED]")
+                  .replace(
+                    /([?&](?:access[_-]?token|auth(?:orization)?|token|api[_-]?key|key|signature|sig|session[_-]?id|hdnea|jwt|client[_-]?secret)=)[^&#\s]*/gi,
+                    "$1[REDACTED]"
+                  );
+                console.log(`[録画][Streamlink][${label}] ${new Date(now).toISOString()} ${safeLine}`);
+              });
+            };
+            logStreamlinkOutput(child.stdout, "stdout");
+            logStreamlinkOutput(child.stderr, "stderr");
+            child.once("spawn", () => {
+              console.log(
+                `[録画] Streamlinkプロセス起動 ${new Date().toISOString()} ` +
+                  `起動要求から=${Date.now() - streamlinkRequestedAt}ms pid=${child.pid}`
+              );
             });
             childClosePromise = new Promise((resolve) => {
               child.once("error", (error) => {
@@ -532,6 +574,10 @@ async function mainLinux() {
               });
               child.once("close", (code, signal) => {
                 childClosed = true;
+                console.log(
+                  `[録画] Streamlinkプロセス終了 ${new Date().toISOString()} ` +
+                    `起動要求から=${Date.now() - streamlinkRequestedAt}ms code=${code} signal=${signal}`
+                );
                 resolve({ code, signal });
               });
             });
@@ -540,8 +586,40 @@ async function mainLinux() {
             // このプロセスIDを取得。これをkillすることで録画終了
             let recTime = new Date(candiLine.end_date).getTime() - Date.now();
             const outputPath = `${DB_INFO.REC.OUTPUT}${candiLine.title}.mp4`;
-            console.log(`[録画] 開始 ${new Date().toISOString()} title=${candiLine.title} pid=${child.pid} durationMs=${recTime}`);
+            console.log(
+              `[録画] Streamlink監視開始 ${new Date().toISOString()} title=${candiLine.title} ` +
+                `pid=${child.pid} 予定終了=${new Date(candiLine.end_date).toISOString()} durationMs=${recTime}`
+            );
             console.log(`[録画] Streamlink出力: ${inputPath}`);
+            let firstFileCreatedLogged = false;
+            let firstFileDataLogged = false;
+            const outputFileMonitor = setInterval(() => {
+              fs.stat(inputPath, (error, stat) => {
+                if (error) {
+                  if (error.code !== "ENOENT") {
+                    console.error(`[録画] TSファイル確認エラー: ${error.toString()}`);
+                  }
+                  return;
+                }
+                if (!firstFileCreatedLogged) {
+                  firstFileCreatedLogged = true;
+                  const now = Date.now();
+                  console.log(
+                    `[録画] TSファイル作成確認 ${new Date(now).toISOString()} ` +
+                      `起動要求から=${now - streamlinkRequestedAt}ms bytes=${stat.size} path=${inputPath}`
+                  );
+                }
+                if (!firstFileDataLogged && stat.size > 0) {
+                  firstFileDataLogged = true;
+                  const now = Date.now();
+                  console.log(
+                    `[録画] TS初回データ確認 ${new Date(now).toISOString()} ` +
+                      `起動要求から=${now - streamlinkRequestedAt}ms bytes=${stat.size} path=${inputPath}`
+                  );
+                }
+              });
+            }, 1000);
+            child.once("close", () => clearInterval(outputFileMonitor));
             const recordingDeadline = Date.now() + Math.max(0, recTime);
             let resolveRecordingDeadline;
             let recordingDeadlineReached = false;
@@ -583,7 +661,7 @@ async function mainLinux() {
             if (recordingResult.kind === "child-exit") {
               console.log(
                 `[録画] Streamlink自然終了 code=${recordingResult.result.code} signal=${recordingResult.result.signal} ` +
-                  `elapsedMs=${Date.now() - (recordingDeadline - Math.max(0, recTime))}`
+                  `elapsedMs=${Date.now() - streamlinkRequestedAt}`
               );
             }
             if (
