@@ -6,7 +6,11 @@ const fs = require("fs");
 const IS_WIN = process.platform === "win32";
 const IS_LINUX = process.platform === "linux";
 const IS_ANDROID = process.platform === "android";
-const IS_TERMUX = IS_LINUX && typeof process.env.PREFIX === "string" && process.env.PREFIX.indexOf("/com.termux/") !== -1;
+const IS_TERMUX =
+  (IS_LINUX || IS_ANDROID) &&
+  [process.env.PREFIX, process.env.HOME].some(
+    (path) => typeof path === "string" && path.indexOf("/com.termux/") !== -1
+  );
 const PS = {
   WIN: {
     PS: {
@@ -314,6 +318,10 @@ async function mainWin() {
   // await setInterval(monitoring, 20 * 1000); // 6分毎にチェックでエンドレス
 }
 async function mainLinux() {
+  console.log(
+    `[録画] 実行環境 platform=${process.platform} termux=${IS_TERMUX} ` +
+      `PREFIX=${process.env.PREFIX || "未設定"}`
+  );
   if (IS_TERMUX) {
     try {
       execSync("termux-wake-lock", { stdio: "ignore" });
