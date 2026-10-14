@@ -93,6 +93,18 @@ async function mOpe(params) {
           { _id: cond._id, status: "中", claimToken: opt.token },
           { $set: { claimUntil: new Date(Date.now() + RECORDING_CLAIM_LEASE_MS) } }
         );
+        if (rec.modifiedCount !== 1) {
+          const current = await collection.findOne(
+            { _id: cond._id },
+            { projection: { status: 1, claimToken: 1, claimUntil: 1 } }
+          );
+          rec = {
+            ...rec,
+            currentStatus: current ? current.status : null,
+            currentClaimUntil: current ? current.claimUntil : null,
+            tokenMatches: current ? current.claimToken === opt.token : false,
+          };
+        }
         break;
       case "completeRecording":
         if (!cond || !cond._id || !opt || !opt.token) {

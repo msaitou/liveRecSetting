@@ -438,10 +438,15 @@ async function mainLinux() {
               claimRenewalInProgress = true;
               try {
                 const renewed = await renewRec(comApiData, candiLine._id, claimToken);
-                if (!renewed) {
+                if (renewed.modifiedCount !== 1) {
                   claimLost = true;
                   clearInterval(claimTimer);
-                  console.error(`[録画] 予約ロックを失いました: ${candiLine.title}`);
+                  console.error(
+                    `[録画] 予約ロックを失いました: ${candiLine.title} ` +
+                      `pid=${child ? child.pid : "未起動"} status=${renewed.currentStatus ?? "なし"} ` +
+                      `lockUntil=${renewed.currentClaimUntil ? new Date(renewed.currentClaimUntil).toISOString() : "なし"} ` +
+                      `tokenMatches=${renewed.tokenMatches}`
+                  );
                   try {
                     await stopChild();
                   } catch (e) {
@@ -799,7 +804,10 @@ async function claimRec(comApiData, id, token) {
 
 async function renewRec(comApiData, id, token) {
   const result = await recordingClaimRequest(comApiData, id, "renewRecordingClaim", token);
-  return result && result.modifiedCount === 1;
+  if (!result || typeof result.modifiedCount !== "number") {
+    throw new Error(`renewRecordingClaimの応答形式が不正です (${JSON.stringify(result)})`);
+  }
+  return result;
 }
 
 async function completeRec(comApiData, id, token) {
