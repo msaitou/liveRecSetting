@@ -362,9 +362,34 @@ async function mainLinux() {
           let claimLost = false;
           let claimRenewalInProgress = false;
           let claimRenewalFailed = false;
+          let resolveClaimLost;
+          const claimLostSignal = new Promise((resolve) => {
+            resolveClaimLost = resolve;
+          });
+          let childClosePromise = null;
+          const stopChild = async () => {
+            if (!child || !child.pid || child.exitCode !== null || child.signalCode !== null) return;
+            try {
+              process.kill(child.pid, "SIGTERM");
+            } catch (e) {
+              if (e.code === "ESRCH") return;
+              throw e;
+            }
+            if (childClosePromise) {
+              await Promise.race([childClosePromise, sleep(5000)]);
+              if (child.exitCode === null && child.signalCode === null) {
+                try {
+                  process.kill(child.pid, "SIGKILL");
+                } catch (e) {
+                  if (e.code !== "ESRCH") throw e;
+                }
+                await childClosePromise;
+              }
+            }
+          };
           try {
             // もし5分以内なら、今時間から開始時間の差分を 開始時間まで寝る。
-            let sleepTime = new Date(candiLine.start_date).getTime() - now.getTime();
+            let sleepTime = new Date(candiLine.start_date).getTime() - Date.now();
             console.log(`[録画] 開始待機 ${Math.max(0, sleepTime)}ms ${new Date().toLocaleString()}`);
             const requestedClaimToken = randomBytes(16).toString("hex");
             const claimResult = await claimRec(comApiData, candiLine._id, requestedClaimToken);
@@ -388,12 +413,12 @@ async function mainLinux() {
                   claimLost = true;
                   clearInterval(claimTimer);
                   console.error(`[録画] 予約ロックを失いました: ${candiLine.title}`);
-                  if (child && child.pid) {
-                    try {
-                      process.kill(child.pid, "SIGTERM");
-                    } catch (e) {
-                      if (e.code !== "ESRCH") console.error(`[録画] Streamlink停止エラー: ${e.toString()}`);
-                    }
+                  try {
+                    await stopChild();
+                  } catch (e) {
+                    console.error(`[録画] Streamlink停止エラー: ${e.toString()}`);
+                  } finally {
+                    resolveClaimLost();
                   }
                 } else if (claimRenewalFailed) {
                   claimRenewalFailed = false;
@@ -410,7 +435,13 @@ async function mainLinux() {
                 claimRenewalInProgress = false;
               }
             }, CLAIM_RENEW_INTERVAL_MS);
-            await sleep(Math.max(0, sleepTime) + cnt++ * 1000);
+            const startWaitResult = await Promise.race([
+              sleep(Math.max(0, sleepTime) + cnt++ * 1000).then(() => "start"),
+              claimLostSignal.then(() => "claim-lost"),
+            ]);
+            if (startWaitResult === "claim-lost" || claimLost) {
+              throw new Error(`予約ロックを失ったため録画を開始しません: ${candiLine.title}`);
+            }
             console.log("sleep後", new Date().toLocaleString());
             const recordingStart = Math.max(Date.now(), new Date(candiLine.start_date).getTime());
             const remainingMs = new Date(candiLine.end_date).getTime() - recordingStart;
@@ -429,6 +460,7 @@ async function mainLinux() {
                 .padStart(2, "0")}`;
             };
             let jifunStr = getJifunStr(new Date(candiLine.end_date), new Date(recordingStart));
+            const inputPath = `${DB_INFO.REC.DIR}${candiLine.title}.${claimToken}.ts`;
 
             let cmds = [
               `-p`,
@@ -436,7 +468,7 @@ async function mainLinux() {
               `https://abema.tv/now-on-air/${candiLine.chanel}`,
               `480p`,
               `-o`,
-              `${DB_INFO.REC.DIR}${candiLine.title}.ts`,
+              inputPath,
               `--hls-duration`,
               jifunStr, // [HH:]MM:SS
             ];
@@ -451,27 +483,50 @@ async function mainLinux() {
               detached: true, // メインプロセスから切り離す設定
               env: process.env, // NODE_ENV を tick.js へ与えるため
             });
+            childClosePromise = new Promise((resolve) => {
+              child.once("error", (error) => resolve({ error }));
+              child.once("close", (code, signal) => resolve({ code, signal }));
+            });
             child.unref(); // メインプロセスから切り離す
 
             // このプロセスIDを取得。これをkillすることで録画終了
             let recTime = new Date(candiLine.end_date).getTime() - Date.now();
-            const inputPath = `${DB_INFO.REC.DIR}${candiLine.title}.ts`;
             const outputPath = `${DB_INFO.REC.OUTPUT}${candiLine.title}.mp4`;
             console.log(`[録画] 開始 ${new Date().toISOString()} title=${candiLine.title} pid=${child.pid} durationMs=${recTime}`);
             console.log(`[録画] Streamlink出力: ${inputPath}`);
-            await sleep(recTime); // 終了時間までのミリ秒待機。
+            const recordingDeadline = Date.now() + Math.max(0, recTime);
+            const recordingResult = await Promise.race([
+              sleep(recTime).then(() => ({ kind: "deadline" })),
+              claimLostSignal.then(() => ({ kind: "claim-lost" })),
+              childClosePromise.then((result) => ({ kind: "child-exit", result })),
+            ]);
+            if (recordingResult.kind === "claim-lost" || claimLost) {
+              throw new Error(`予約ロックを失ったため録画後処理を中止します: ${candiLine.title}`);
+            }
+            if (
+              recordingResult.kind === "child-exit" &&
+              (recordingResult.result.error || recordingResult.result.code !== 0)
+            ) {
+              throw new Error(
+                `Streamlinkが異常終了しました: ${recordingResult.result.error || `code=${recordingResult.result.code} signal=${recordingResult.result.signal}`}`
+              );
+            }
+            if (
+              recordingResult.kind === "child-exit" &&
+              recordingResult.result.code === 0 &&
+              Date.now() < recordingDeadline - 5000
+            ) {
+              throw new Error(`Streamlinkが終了予定時刻より早く終了しました: ${candiLine.title}`);
+            }
             if (claimLost) throw new Error(`予約ロックを失ったため録画後処理を中止します: ${candiLine.title}`);
             // & 'C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe' -i .\Mリーグ_230411.mp4 -vcodec copy -acodec copy .\Mリーグ_230411_2.mp4
             const PS_CMD_FFMPEG = `${DB_INFO.FFMPEG} -i "${inputPath}" -vcodec copy -acodec copy "${outputPath}"`;
             try {
               console.log(`[録画] Streamlink停止 pid=${child.pid}`);
-              process.kill(child.pid, "SIGTERM");
+              await stopChild();
             } catch (e) {
-              if (e.code === "ESRCH") {
-                console.log(`[録画] Streamlinkはすでに終了しています pid=${child.pid}`);
-              } else {
-                console.error(`[録画] Streamlink停止時のエラー: ${e.toString()}`);
-              }
+              console.error(`[録画] Streamlink停止時のエラー: ${e.toString()}`);
+              throw e;
             }
             try {
               if (!fs.existsSync(inputPath)) {
