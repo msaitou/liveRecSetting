@@ -356,6 +356,10 @@ async function mainLinux() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(findData),
       });
+      if (!data || !Array.isArray(data.rec)) {
+        console.error(`[録画] 予約一覧の取得に失敗しました。次回再試行します`);
+        return;
+      }
       data = data.rec;
       // console.log(3);
       // console.log(data);
@@ -614,7 +618,8 @@ async function mainLinux() {
                   recordingResult = wait;
                   break;
                 }
-                if (recordingDeadline - Date.now() <= 10000) {
+                // hls-durationの計測誤差で終了予定の数十秒前に正常終了することがあるため、再起動せず完了扱いにする
+                if (recordingDeadline - Date.now() <= 90000) {
                   recordingResult = { kind: "deadline" };
                   break;
                 }
